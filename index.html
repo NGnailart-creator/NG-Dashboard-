@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
+<title>NG Nail Art Dashboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap');
+  * { box-sizing: border-box; }
+  html,body{height:100%;margin:0;}
+  ::-webkit-scrollbar{display:none;}
+  body{
+    --bg:#FCEEF3; --surface:#FFFFFF; --text:#2A1620; --muted:#8C6B78;
+    --accent:#D9527A; --onAccent:#FFFFFF; --tint:#FBDCE5; --hairline:#F2C9D6;
+    background:var(--bg); font-family:Inter,sans-serif; color:var(--text);
+  }
+  .tap{transition:transform .12s ease, opacity .12s ease;}
+  .tap:active{transform:scale(.96); opacity:.85;}
+  .card{background:var(--surface); border-radius:16px; padding:16px; box-shadow:0 1px 2px rgba(42,22,32,0.06); margin-bottom:12px;}
+  .eyebrow{font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--accent); text-transform:uppercase; letter-spacing:.02em;}
+  .title{font-family:'Fraunces',serif; font-size:19px; font-weight:600; color:var(--text); margin-top:2px;}
+  .pill{padding:6px 12px; border-radius:999px; font-family:Inter,sans-serif; font-size:11.5px; font-weight:600; cursor:pointer; border:1px solid var(--hairline); background:transparent; color:var(--text);}
+  .pill.active{background:var(--accent); color:var(--onAccent); border-color:var(--accent);}
+  .stat{flex:1; text-align:center; background:var(--tint); border-radius:12px; padding:10px 6px;}
+  .stat .num{font-family:'JetBrains Mono',monospace; font-size:16px; font-weight:700; color:var(--accent);}
+  .stat .label{font-family:Inter,sans-serif; font-size:10px; color:var(--muted); margin-top:2px;}
+  .toggle{width:38px; height:22px; border-radius:999px; background:var(--hairline); position:relative; cursor:pointer; flex-shrink:0;}
+  .toggle.on{background:var(--accent);}
+  .toggle .knob{position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; transition:left .15s ease;}
+  .toggle.on .knob{left:18px;}
+  .tag{font-family:'JetBrains Mono',monospace; font-size:10px; padding:3px 9px; border-radius:999px; background:var(--tint); color:var(--accent);}
+  .topnav{position:sticky; top:0; z-index:10; background:var(--bg); border-bottom:1px solid var(--hairline); padding:10px 16px; display:flex; gap:6px; overflow-x:auto;}
+  .navbtn{display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 10px; border-radius:12px; font-family:Inter,sans-serif; font-size:10px; color:var(--muted); background:none; border:none; cursor:pointer; white-space:nowrap;}
+  .navbtn.active{color:var(--accent); background:var(--tint);}
+  .page{max-width:420px; margin:0 auto; padding:12px 16px 40px;}
+  .section-hidden{display:none;}
+  .avatar{width:40px; height:40px; border-radius:50%; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; font-family:'Fraunces',serif; font-weight:600; font-size:15px; flex-shrink:0;}
+  .row{display:flex; align-items:center; gap:10px;}
+  .btn-primary{background:var(--accent); color:var(--onAccent); border:none; border-radius:10px; padding:9px 14px; font-family:Inter,sans-serif; font-weight:600; font-size:12.5px; cursor:pointer;}
+  .btn-ghost{background:transparent; border:1px solid var(--hairline); border-radius:10px; padding:9px 14px; font-family:Inter,sans-serif; font-weight:600; font-size:12.5px; cursor:pointer; color:var(--text);}
+  .themeRow{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
+  .swatch{width:26px; height:26px; border-radius:50%; cursor:pointer; border:2px solid transparent;}
+  .swatch.active{border-color:var(--text);}
+  input,textarea,select{width:100%; font-family:Inter,sans-serif; font-size:13px; padding:9px 11px; border-radius:10px; border:1px solid var(--hairline); background:var(--surface); color:var(--text);}
+  .divider{height:1px; background:var(--hairline); margin:10px 0;}
+  #loginScreen{min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;}
+  .loginCard{max-width:340px; width:100%; background:var(--surface); border-radius:20px; padding:28px 22px; box-shadow:0 4px 16px rgba(42,22,32,0.1);}
+  .pwWrap{position:relative;}
+  .pwWrap .eye{position:absolute; right:12px; top:50%; transform:translateY(-50%); cursor:pointer; font-size:15px;}
+</style>
+</head>
+<body>
+
+<div id="loginScreen">
+  <div class="loginCard">
+    <div style="font-family:'Fraunces',serif; font-size:22px; font-weight:600; text-align:center; margin-bottom:4px;">Natasya Gishelle</div>
+    <div style="text-align:center; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:22px;">Nail Art Dashboard</div>
+    <div style="display:grid; gap:10px;">
+      <input id="loginUser" placeholder="Username" autocomplete="username" />
+      <div class="pwWrap">
+        <input id="loginPass" type="password" placeholder="Password" autocomplete="current-password" style="padding-right:38px;" />
+        <span class="eye tap" id="loginPwToggle">👁️</span>
+      </div>
+      <div id="loginError" style="font-size:11.5px; color:#C74A3E; display:none;">Username or password not recognized.</div>
+      <button class="btn-primary tap" id="loginBtn" style="width:100%; margin-top:6px;">Log in</button>
+    </div>
+    <div style="font-size:10.5px; color:var(--muted); text-align:center; margin-top:16px;">Forgot your password? Ask the owner to look it up in Admin.</div>
+  </div>
+</div>
+
+<div id="appRoot" style="display:none;">
+<div class="topnav" id="topnav"></div>
+<div style="display:flex; justify-content:flex-end; padding:6px 16px 0;">
+  <button id="langToggle" class="pill tap" style="font-size:10.5px; padding:5px 10px;">🌐 EN / ID</button>
+</div>
+<div class="page" id="pages"></div>
+</div>
+
+<script>
+// ---------- STAFF / LOGIN ----------
+// TODO: once Supabase is connected, replace this with a real `staff` table lookup.
+const LEVELS = ['None', 'View', 'Edit'];
+const people = [
+  {name:'Gisel', role:'Owner', locked:true, username:'gisel_owner', password:'owner2026', access:{Clients:2, Bookings:2, Knowledge:2, 'Chit-chat':2}},
+  {name:'Nayla', role:'Senior artist', locked:false, username:'nayla_senior', password:'nayla2026', access:{Clients:1, Bookings:2, Knowledge:1, 'Chit-chat':1}},
+  {name:'Amanda', role:'Junior artist', locked:false, username:'amanda_jr', password:'amanda123', access:{Clients:1, Bookings:2, Knowledge:1, 'Chit-chat':1}},
+  {name:'IG Admin', role:'Instagram admin', locked:false, username:'ng_igadmin', password:'admin2026', access:{Clients:1, Bookings:2, Knowledge:1, 'Chit-chat':1}}
+];
+let currentUser = null;
+
+document.getElementById('loginPwToggle').onclick = () => {
+  const pw = document.getElementById('loginPass');
+  pw.type = pw.type === 'password' ? 'text' : 'password';
+};
+document.getElementById('loginBtn').onclick = attemptLogin;
+document.getElementById('loginPass').addEventListener('keydown', e => { if (e.key==='Enter') attemptLogin(); });
+function attemptLogin(){
+  const u = document.getElementById('loginUser').value.trim();
+  const p = document.getElementById('loginPass').value;
+  const match = people.find(person => person.username === u && person.password === p);
+  if (!match){
+    document.getElementById('loginError').style.display = 'block';
+    return;
+  }
+  currentUser = match;
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appRoot').style.display = 'block';
+  initApp();
+}
+
+function initApp(){
+const PAGES_FOR_MATRIX = ['Clients','Bookings','Knowledge','Chit-chat'];
+const THEMES = {
+  pink:   {bg:'#FCEEF3', tint:'#FBDCE5', hairline:'#F2C9D6', accent:'#D9527A', text:'#2A1620', muted:'#8C6B78'},
+  none:   {bg:'#FBF8F3', tint:'#F3EAD6', hairline:'#E9DCC0', accent:'#E8A33D', text:'#3A2F1B', muted:'#8C8367'},
+  blue:   {bg:'#EDF6FB', tint:'#D6ECF5', hairline:'#C3DFEC', accent:'#2E7FA6', text:'#111E29', muted:'#66808F'},
+  green:  {bg:'#EEF7EE', tint:'#DAEEDA', hairline:'#C7E2C7', accent:'#3E8C5C', text:'#14211A', muted:'#6B8C77'},
+  purple: {bg:'#F4EEFB', tint:'#E7DAF6', hairline:'#DCC9EF', accent:'#8C5CC7', text:'#201A2B', muted:'#7C6E90'},
+  red:    {bg:'#FCEEEE', tint:'#F8D9D9', hairline:'#F0C3C3', accent:'#C74A3E', text:'#2A1414', muted:'#8C6E6E'}
+};
+function applyTheme(name){
+  const th = THEMES[name];
+  Object.entries({'--bg':th.bg,'--tint':th.tint,'--hairline':th.hairline,'--accent':th.accent,'--text':th.text,'--muted':th.muted})
+    .forEach(([k,v]) => document.body.style.setProperty(k,v));
+  document.querySelectorAll('.swatch').forEach(s => s.classList.toggle('active', s.dataset.theme===name));
+}
+
+const TABS = [
+  {key:'home', label:'Home', icon:'🏠'},
+  {key:'clients', label:'Clients', icon:'💅'},
+  {key:'calendar', label:'Bookings', icon:'📅'},
+  {key:'knowledge', label:'Knowledge', icon:'📚'},
+  {key:'chitchat', label:'Chit-chat', icon:'💬'},
+  {key:'team', label:'Team', icon:'👥'},
+  {key:'pricing', label:'Pricing', icon:'💰', roles:['Owner','Instagram admin']},
+  {key:'admin', label:'Admin', icon:'🛡️', roles:['Owner']}
+];
+const visibleTabs = TABS.filter(tb => !tb.roles || tb.roles.includes(currentUser.role));
+
+const nav = document.getElementById('topnav');
+visibleTabs.forEach(tb => {
+  const b = document.createElement('button');
+  b.className = 'navbtn tap' + (tb.key==='home' ? ' active' : '');
+  b.dataset.key = tb.key;
+  b.innerHTML = `<span style="font-size:15px">${tb.icon}</span><span>${tb.label}</span>`;
+  b.onclick = () => showPage(tb.key);
+  nav.appendChild(b);
+});
+
+function showPage(key){
+  document.querySelectorAll('.navbtn').forEach(b => b.classList.toggle('active', b.dataset.key===key));
+  document.querySelectorAll('.pagesec').forEach(p => p.classList.toggle('section-hidden', p.id !== 'page-'+key));
+}
+
+const pages = document.getElementById('pages');
+
+// ---------- HOME ----------
+pages.innerHTML += `
+<div class="pagesec section-hidden" id="page-home">
+  <div class="card">
+    <div class="eyebrow" data-i18n="today">Today</div>
+    <div class="title" data-i18n="goodMorning">Good morning, Gisel</div>
+    <div style="font-size:10.5px; color:var(--muted); margin-top:4px;" data-i18n="homeDefaultNote">Home is set as your default page — it opens here automatically when you log in.</div>
+    <div class="row" style="margin-top:12px; gap:8px;">
+      <div class="stat"><div class="num">3</div><div class="label">Bookings today</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row" style="justify-content:space-between;">
+      <div class="eyebrow" data-i18n="announcements">Announcements</div>
+      <button class="btn-ghost tap" style="font-size:10.5px; padding:5px 10px;" data-i18n="addOwnerOnly">+ Add (owner only)</button>
+    </div>
+    <div class="title" style="font-size:15px; margin-top:4px;">New Canva schedule template uploaded</div>
+    <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">Posted by Gisel — use this for October's schedule graphic.</div>
+  </div>
+  <div class="card">
+    <div class="eyebrow" data-i18n="upcomingBirthdays">Upcoming birthdays</div>
+    <div style="font-size:13px; margin-top:6px;">🎂 Sarah T. — Mar 14</div>
+    <div style="font-size:13px; margin-top:6px;">🎂 Bella K. — Sep 20</div>
+  </div>
+</div>`;
+
+// ---------- CLIENTS ----------
+const clients = [
+  {name:'Sarah T.', birthday:'Mar 14', visits:5, last:'Aug 28', artist:'Nayla (senior)', pref:['chrome','minimalist'], rating:5, note:'Loves nude tones, always books 2hr slot, sensitive cuticles.', privateNote:'Written by Nayla — mentioned she\'s going through a rough divorce, prefers not to talk about work during her session.', sharedNote:'Prefers text reminders over calls.'},
+  {name:'Bella K.', birthday:'Sep 20', visits:2, last:'Sep 02', artist:'Amanda (junior)', pref:['3D charms','bold color'], rating:4, note:'First-timer became regular. Asked about loyalty reward at visit 3.', privateNote:'Written by Amanda — new mom, might bring baby along, keep sessions under 90 min if possible.', sharedNote:'Birthday coming up Sep 20 — consider a small discount.'},
+  {name:'Meidy R.', birthday:'Nov 02', visits:8, last:'Sep 05', artist:'Nayla (senior)', pref:['french tip','gel'], rating:5, note:'VIP — free add-on earned at visit 8. Always brings reference photos.', privateNote:'Written by Gisel — referred 3 friends, treat as VIP for scheduling priority.', sharedNote:'Always tips well, offer the new charm designs first.'}
+];
+function clientCardHtml(c){
+  return `
+  <div class="card">
+    <div class="row">
+      <div class="avatar">${c.name[0]}</div>
+      <div style="flex:1">
+        <div style="font-family:'Fraunces',serif; font-weight:600; font-size:15.5px;">${c.name}</div>
+        <div style="font-size:11.5px; color:var(--muted);">Last visit ${c.last} · with ${c.artist}</div>
+      </div>
+      <div class="tag">${c.visits} visits</div>
+    </div>
+    <div class="divider"></div>
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+      ${c.pref.map(p => `<span class="tag">#${p}</span>`).join('')}
+    </div>
+    <div style="font-size:12.5px; color:var(--text); line-height:1.5;">${c.note}</div>
+    <div class="row" style="margin-top:10px; justify-content:space-between;">
+      <div style="font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--accent);">${'★'.repeat(c.rating)}${'☆'.repeat(5-c.rating)}</div>
+      <button class="btn-ghost tap" style="font-size:11px; padding:6px 10px;">View visit history</button>
+    </div>
+    <div style="font-size:10.5px; color:var(--muted); margin-top:8px;">🎂 ${c.birthday} · visits logged only by owner/admin</div>
+    <div class="divider"></div>
+    ${(currentUser.role==='Owner' || c.privateNote.includes('by '+currentUser.name)) ? `
+    <div class="row" style="justify-content:space-between; margin-bottom:6px;">
+      <span style="font-size:11px; color:var(--muted);">🔒 Private note — visible to writer + owner only</span>
+    </div>
+    <div style="font-size:12px; color:var(--text); background:var(--tint); border-radius:10px; padding:8px 10px; margin-bottom:10px;">${c.privateNote}</div>` : ''}
+    <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">📌 Shared note — anyone on the team can add or see this</div>
+    <div style="font-size:12px; color:var(--text); background:var(--surface); border:1px solid var(--hairline); border-radius:10px; padding:8px 10px;">${c.sharedNote}</div>
+  </div>`;
+}
+pages.innerHTML += `
+<div class="pagesec" id="page-clients">
+  <div class="card">
+    <div class="eyebrow" data-i18n="loggedInAs">Logged in as</div>
+    <div style="font-size:13px; margin-top:4px;" id="loggedInAsLine"><b>Gisel</b> — Owner · sees every client automatically, no switching needed</div>
+  </div>
+  <div class="card">
+    <div class="eyebrow" data-i18n="clientList">Client list</div>
+    <div class="title" data-i18n="clientsVisits">Clients & visits</div>
+    <div class="row" style="gap:6px; margin-top:10px;">
+      <input id="clientSearch" data-i18n-ph="searchClientsPlaceholder" placeholder="Search name, style, notes..." style="flex:1;" />
+      <button class="btn-primary tap" id="clientSearchBtn" data-i18n="search" style="padding:9px 16px;">Search</button>
+    </div>
+  </div>
+  <div id="clientResults"></div>
+  <div class="card">
+    <div class="eyebrow" data-i18n="exampleSharedClient">Example — shared client</div>
+    <div class="title" style="font-size:15.5px;">Meidy R. — visit history</div>
+    <div class="divider"></div>
+    <div style="font-size:12.5px; margin-bottom:8px;"><b>Sep 05</b> — Nayla (senior) — gel, french tip <span class="tag" style="margin-left:4px;">on calendar</span></div>
+    <div style="font-size:12.5px; margin-bottom:8px;"><b>Jul 14</b> — Amanda (junior) — gel refill <span class="tag" style="margin-left:4px;">on calendar</span></div>
+    <div style="font-size:12.5px;"><b>May 02</b> — Nayla (senior) — gel, chrome <span class="tag" style="margin-left:4px;">on calendar</span></div>
+    <div style="font-size:11px; color:var(--muted); margin-top:8px;">Only the owner sees this combined view across artists — each artist's own page only shows the visits they personally handled.</div>
+    <button class="btn-primary tap" style="width:100%; margin-top:10px;" data-i18n="addVisit">+ Add visit</button>
+  </div>
+</div>`;
+const isOwnerOrAdmin = currentUser.role === 'Owner' || currentUser.role === 'Instagram admin';
+document.getElementById('loggedInAsLine').innerHTML = isOwnerOrAdmin
+  ? `<b>${currentUser.name}</b> — ${currentUser.role} · sees every client automatically, no switching needed`
+  : `<b>${currentUser.name}</b> — ${currentUser.role} · only your own clients show here automatically`;
+function renderClients(filter){
+  const f = (filter||'').toLowerCase().trim();
+  const scoped = isOwnerOrAdmin ? clients : clients.filter(c => c.artist.startsWith(currentUser.name));
+  const results = scoped.filter(c => !f || (c.name+' '+c.pref.join(' ')+' '+c.note+' '+c.sharedNote+' '+c.artist).toLowerCase().includes(f));
+  document.getElementById('clientResults').innerHTML = results.length ? results.map(clientCardHtml).join('') : `<div class="card"><div style="font-size:12.5px; color:var(--muted);">No clients match — try a different word.</div></div>`;
+}
+document.getElementById('clientSearch').oninput = e => renderClients(e.target.value);
+document.getElementById('clientSearchBtn').onclick = () => renderClients(document.getElementById('clientSearch').value);
+renderClients('');
+
+
+
+// ---------- CALENDAR ----------
+pages.innerHTML += `
+<div class="pagesec section-hidden" id="page-calendar">
+  <div class="card">
+    <div class="eyebrow" data-i18n="thisWeek">This week</div>
+    <div class="title" data-i18n="bookings">Bookings</div>
+  </div>
+  <div class="row" style="gap:8px; margin-bottom:4px;">
+    <button class="pill active tap" id="calTeamBtn" style="flex:1; text-align:center;" data-i18n="teamCalendar">Group calendar</button>
+    <button class="pill tap" id="calMineBtn" style="flex:1; text-align:center;" data-i18n="privateCalendar">Personal calendar</button>
+  </div>
+  <div class="card" style="padding:10px 12px;">
+    <div style="font-size:11px; color:var(--muted); margin-bottom:6px;" data-i18n="showScheduleFor">Show schedule for:</div>
+    <select id="calWhoFilter" style="font-size:12.5px;">
+      <option value="everyone">Everyone's schedule</option>
+      <option value="Gisel">Gisel (owner) — mine only</option>
+      <option value="Nayla">Nayla — hers only</option>
+      <option value="Amanda">Amanda — hers only</option>
+      <option value="IG Admin">IG Admin — theirs only</option>
+    </select>
+  </div>
+  <div class="card" style="background:linear-gradient(160deg, var(--tint) 0%, var(--surface) 140%);">
+    <div class="row" style="justify-content:space-between; margin-bottom:10px;">
+      <span class="tap" id="calPrev" style="cursor:pointer; color:var(--accent); font-size:18px; padding:4px 8px;">‹</span>
+      <div id="calMonthLabel" style="font-family:'Fraunces',serif; font-size:16px; font-weight:600;">🗓️ September 2026</div>
+      <span class="tap" id="calNext" style="cursor:pointer; color:var(--accent); font-size:18px; padding:4px 8px;">›</span>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:5px; text-align:center; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); margin-bottom:6px;">
+      <div>S</div><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div>
+    </div>
+    <div id="calGrid" style="display:grid; grid-template-columns:repeat(7,1fr); gap:5px;"></div>
+  </div>
+  <div class="card" id="calDayCard"></div>
+  <div class="card" id="calBusyCard"></div>
+  <div class="card" id="calTeamOnlyNote">
+    <div style="font-size:11.5px; color:var(--muted);">Group calendar: everyone can view, only owner and admin can add or edit. Personal calendar: private to each person, for their own reminders. Tap any date above to see or add to that day.</div>
+  </div>
+  <div class="card">
+    <div style="font-weight:600; font-size:13px; margin-bottom:6px;" data-i18n="googleCalendarSync">Google Calendar sync</div>
+    <div style="font-size:11.5px; color:var(--muted); background:var(--tint); border-radius:10px; padding:8px 10px;">⚠️ This only <b>reads</b> your Google Calendar. It never edits, deletes, or adds anything on your actual Google Calendar — nothing here can change it in any way.</div>
+    <button class="btn-ghost tap" style="width:100%; margin-top:10px;" data-i18n="connectGoogleCalendar">Connect Google Calendar</button>
+  </div>
+</div>`;
+
+// ---------- CALENDAR GRID ----------
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const CAL_BOOKINGS = {
+  '2026-7-28': [{client:'Sarah T.', artist:'Nayla (senior)', time:'11:00 AM', service:'gel refill', status:'Confirmed', group:true, people:['Nayla']}],
+  '2026-8-9':  [{client:'Sarah T.', artist:'Nayla (senior)', time:'1:00 PM', service:'chrome + minimalist', status:'Confirmed', group:true, people:['Nayla']}],
+  '2026-8-10': [{client:'Bella K.', artist:'Amanda (junior)', time:'4:00 PM', service:'deposit pending', status:'Awaiting', group:true, people:['Amanda','IG Admin']}],
+  '2026-8-14': [{client:'', artist:'Gisel', time:'All day', service:'Sarah T.\'s birthday reminder', status:'Personal', group:false, people:['Gisel']}],
+  '2026-9-2':  [{client:'Meidy R.', artist:'Nayla (senior)', time:'10:00 AM', service:'french tip + gel', status:'Confirmed', group:true, people:['Nayla','Gisel']}]
+};
+let calMode = 'team';
+let calWho = 'everyone';
+let cursor = {year:2026, month:8}; // September = index 8
+let selectedDay = 9;
+function keyFor(d){ return `${cursor.year}-${cursor.month}-${d}`; }
+function matchesFilter(b){
+  const modeOk = calMode==='team' ? b.group : !b.group;
+  const whoOk = calWho==='everyone' || (b.people && b.people.includes(calWho));
+  return modeOk && whoOk;
+}
+function renderCalGrid(){
+  document.getElementById('calMonthLabel').textContent = `🗓️ ${MONTH_NAMES[cursor.month]} ${cursor.year}`;
+  const grid = document.getElementById('calGrid');
+  const firstDow = new Date(cursor.year, cursor.month, 1).getDay();
+  const daysInMonth = new Date(cursor.year, cursor.month+1, 0).getDate();
+  let cells = '';
+  for (let i=0;i<firstDow;i++) cells += `<div></div>`;
+  for (let d=1; d<=daysInMonth; d++){
+    const has = (CAL_BOOKINGS[keyFor(d)]||[]).some(matchesFilter);
+    const isSelected = d===selectedDay;
+    cells += `<div class="tap calday" data-day="${d}" style="aspect-ratio:1; min-height:34px; display:flex; align-items:center; justify-content:center; border-radius:8px; font-family:'JetBrains Mono',monospace; font-size:11px; cursor:pointer; ${isSelected?'background:var(--accent); color:#fff;':has?'background:var(--tint); color:var(--text);':'color:var(--text);'}">${d}</div>`;
+  }
+  grid.innerHTML = cells;
+}
+function showCalDay(){
+  const items = (CAL_BOOKINGS[keyFor(selectedDay)]||[]).filter(matchesFilter);
+  const card = document.getElementById('calDayCard');
+  const monthShort = MONTH_NAMES[cursor.month].slice(0,3);
+  const addLabel = calMode==='team' ? '+ Add booking' : '+ Add personal note';
+  if (!items.length){
+    card.innerHTML = `<div style="font-size:12.5px; color:var(--muted);">${monthShort} ${selectedDay} — nothing on the ${calMode==='team'?'group':'personal'} calendar yet.</div>` +
+      `<button class="btn-primary tap" id="calAddBtn" style="width:100%; margin-top:10px;">${addLabel}</button>`;
+    renderBusyCard();
+    return;
+  }
+    card.innerHTML = `<div class="eyebrow">${monthShort} ${selectedDay}</div>` + items.map((b,i) => `
+      <div class="caldayitem" data-item="${i}" style="padding:8px 0; border-top:1px solid var(--hairline);">
+        <div class="row" style="justify-content:space-between;">
+          <div class="tap" data-goclient="1" style="font-weight:600; font-size:13px; cursor:pointer;">${b.client ? b.client + ' — ' : ''}${b.artist}</div>
+          <div class="row" style="gap:6px;">
+            <span class="tag">${b.status}</span>
+            <span class="tap" data-tagpeople="${i}" style="cursor:pointer; font-size:13px;" title="Tag people">🏷️</span>
+            <span class="tap" data-remove="${i}" style="cursor:pointer; font-size:13px; color:var(--muted);" title="Remove">✕</span>
+          </div>
+        </div>
+        <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">${b.time} — ${b.service}</div>
+        ${b.people && b.people.length ? `<div style="display:flex; gap:5px; flex-wrap:wrap; margin-top:5px;">${b.people.map(p=>`<span class="tag">👤 ${p}</span>`).join('')}</div>` : ''}
+        ${b.client ? `<div style="font-size:10px; color:var(--accent); margin-top:4px;">↳ tap the name to view ${b.client}'s client record — visit logged automatically</div>` : ''}
+      </div>`).join('') +
+      `<button class="btn-primary tap" id="calAddBtn" style="width:100%; margin-top:10px;">${addLabel}</button>`;
+  renderBusyCard();
+}
+function renderBusyCard(){
+  const counts = {};
+  Object.entries(CAL_BOOKINGS).forEach(([k,items]) => {
+    const [y,m,d] = k.split('-').map(Number);
+    if (y===cursor.year && m===cursor.month) counts[d] = items.filter(b=>b.group).length;
+  });
+  const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  const el = document.getElementById('calBusyCard');
+  if (!entries.length){ el.innerHTML = `<div style="font-size:11.5px; color:var(--muted);">No bookings logged yet this month to compare.</div>`; return; }
+  el.innerHTML = `<div style="font-weight:600; font-size:12.5px; margin-bottom:8px;">Busiest days this month</div>` +
+    entries.map(([d,c]) => `<div class="row" style="justify-content:space-between; padding:4px 0;"><span style="font-size:12px;">${MONTH_NAMES[cursor.month].slice(0,3)} ${d}</span><span class="tag">${c} booking${c>1?'s':''}</span></div>`).join('');
+}
+function goPrevMonth(){ cursor.month--; if (cursor.month<0){cursor.month=11; cursor.year--;} selectedDay=1; renderCalGrid(); showCalDay(); }
+function goNextMonth(){ cursor.month++; if (cursor.month>11){cursor.month=0; cursor.year++;} selectedDay=1; renderCalGrid(); showCalDay(); }
+function setCalMode(mode){
+  calMode = mode;
+  document.getElementById('calTeamBtn').classList.toggle('active', mode==='team');
+  document.getElementById('calMineBtn').classList.toggle('active', mode==='mine');
+  renderCalGrid(); showCalDay();
+}
+// single delegated listener — avoids re-binding handlers after every redraw
+document.addEventListener('click', e => {
+  if (e.target.closest('#calPrev')) return goPrevMonth();
+  if (e.target.closest('#calNext')) return goNextMonth();
+  if (e.target.closest('#calTeamBtn')) return setCalMode('team');
+  if (e.target.closest('#calMineBtn')) return setCalMode('mine');
+  const dayEl = e.target.closest('.calday');
+  if (dayEl) { selectedDay = +dayEl.dataset.day; renderCalGrid(); showCalDay(); return; }
+  if (e.target.closest('[data-goclient]')) return showPage('clients');
+  if (e.target.closest('[data-tagpeople]')) { alert('Tag people — pick from Gisel, Nayla, Amanda, IG Admin (owner/admin can tag anyone; nail artists can tag themselves).'); return; }
+  const rm = e.target.closest('[data-remove]');
+  if (rm) {
+    const idx = +rm.dataset.remove;
+    const items = CAL_BOOKINGS[keyFor(selectedDay)];
+    if (items) { items.splice(idx,1); if (!items.length) delete CAL_BOOKINGS[keyFor(selectedDay)]; }
+    renderCalGrid(); showCalDay();
+    return;
+  }
+  const pick = e.target.closest('[data-pickperson]');
+  if (pick) { pick.classList.toggle('active'); return; }
+  if (e.target.closest('#calAddBtn')) {const card = document.getElementById('calDayCard');
+    const isTeam = calMode==='team';
+    if (document.getElementById('calAddForm')) return;
+    card.innerHTML += `
+      <div class="divider"></div>
+      <div id="calAddForm" style="font-size:11.5px; font-weight:600; margin-bottom:6px;">${isTeam ? 'New booking' : 'New personal note'}</div>
+      <div style="display:grid; gap:8px;">
+        ${isTeam ? `<select><option>Client — select or add new</option><option>Sarah T.</option><option>Bella K.</option><option>Meidy R.</option><option>+ New client</option></select>` : ''}
+        <div style="font-size:11px; color:var(--muted);">Who's on this ${isTeam?'booking':'note'}? (tap to add their name)</div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          ${['Gisel','Nayla','Amanda','IG Admin'].map(p=>`<span class="pill tap" data-pickperson="${p}" style="font-size:11px; padding:5px 10px;">${p}</span>`).join('')}
+        </div>
+        <input placeholder="Time (e.g. 2:00 PM)" />
+        <input placeholder="${isTeam ? 'Service' : 'What is this note about?'}" />
+        <textarea placeholder="Notes" style="min-height:50px;"></textarea>
+        <button class="btn-primary tap" style="width:100%;">Save to calendar</button>
+      </div>`;
+    return;
+  }
+});
+renderCalGrid();
+showCalDay();
+document.getElementById('calWhoFilter').onchange = e => { calWho = e.target.value; renderCalGrid(); showCalDay(); };
+
+// ---------- KNOWLEDGE BASE ----------
+pages.innerHTML += `
+<div class="pagesec section-hidden" id="page-knowledge">
+  <div class="card">
+    <div class="eyebrow" data-i18n="adminKnowledgeBase">Admin knowledge base</div>
+    <div class="title" data-i18n="qaLibrary">Q&A library</div>
+    <div style="font-size:12px; color:var(--muted); margin-top:4px;">Shared room — owner, admin and nail artists can all add materials here. Only the owner can add new categories/sections.</div>
+    <div class="row" style="gap:6px; margin-top:10px;">
+      <input id="kbSearch" data-i18n-ph="searchKnowledgePlaceholder" placeholder="Search every word in every entry..." style="flex:1;" />
+      <button class="btn-primary tap" id="kbSearchBtn" data-i18n="search" style="padding:9px 16px;">Search</button>
+    </div>
+    <div style="font-size:11px; color:var(--muted); margin-top:8px; margin-bottom:4px;" data-i18n="browseByHashtag">Browse by hashtag (owner can add new ones):</div>
+    <div id="kbTagIndex" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
+  </div>
+  <div id="kbResults"></div>
+  <button class="btn-primary tap" style="width:100%;" data-i18n="addMaterial">+ Add material</button>
+  <div class="card" style="margin-top:16px;">
+    <div class="eyebrow" data-i18n="guidance">Guidance</div>
+    <div class="title" style="font-size:16px;" data-i18n="teamGuidance">Team guidance</div>
+    <div style="font-size:11.5px; color:var(--muted); margin-top:4px;">Separate from Q&A — entries here can only be added by the owner and admin.</div>
+  </div>
+  <div class="card">
+    <div style="font-weight:600; font-size:13.5px;">Handling last-minute cancellations</div>
+    <div style="font-size:12.5px; color:var(--text); margin-top:6px; line-height:1.5;">Offer the next available slot first, then note the cancellation in the client's shared note so the next artist knows.</div>
+  </div>
+</div>`;
+
+const KB_ITEMS = [
+  {q:'Can I get a discount for a group booking?', a:'Groups of 3+ get 10% off each service. Mention this only if they ask first — don\'t offer proactively.', tags:['pricing']},
+  {q:'What if I need to reschedule last minute?', a:'Deposit is non-refundable within 24 hours, but can be moved to a new date once, same month only.', tags:['policy']}
+];
+let activeTagFilter = null;
+function allTags(){ return [...new Set(KB_ITEMS.flatMap(it => it.tags))]; }
+function renderTagIndex(){
+  document.getElementById('kbTagIndex').innerHTML = allTags().map(t => `
+    <button class="pill tap" data-tag="${t}" style="font-size:10px; padding:4px 9px; ${activeTagFilter===t?'background:var(--accent); color:#fff; border-color:var(--accent);':''}">#${t}</button>
+  `).join('') + `<button class="pill tap" id="kbTagAdd" style="font-size:10px; padding:4px 9px;">+ hashtag (owner)</button>`;
+  document.querySelectorAll('[data-tag]').forEach(btn => {
+    btn.onclick = () => { activeTagFilter = activeTagFilter===btn.dataset.tag ? null : btn.dataset.tag; renderTagIndex(); renderKB(document.getElementById('kbSearch').value); };
+  });
+}
+function renderKB(filter){
+  const f = (filter||'').toLowerCase().trim();
+  const results = KB_ITEMS.filter(it => {
+    const matchesText = !f || (it.q+' '+it.a+' '+it.tags.join(' ')).toLowerCase().includes(f);
+    const matchesTag = !activeTagFilter || it.tags.includes(activeTagFilter);
+    return matchesText && matchesTag;
+  });
+  document.getElementById('kbResults').innerHTML = results.length ? results.map(it => `
+    <div class="card">
+      <div style="font-weight:600; font-size:13.5px;">"${it.q}"</div>
+      <div style="font-size:12.5px; color:var(--text); margin-top:6px; line-height:1.5;">${it.a}</div>
+      <div class="row" style="margin-top:8px; gap:6px;">
+        ${it.tags.map(t => `<span class="tag">#${t}</span>`).join('')}
+        <span class="tag" style="background:var(--accent); color:#fff;">✓ approved</span>
+      </div>
+    </div>`).join('') : `<div class="card"><div style="font-size:12.5px; color:var(--muted);">No matches — try a different word or hashtag.</div></div>`;
+}
+document.getElementById('kbSearch').oninput = e => renderKB(e.target.value);
+document.getElementById('kbSearchBtn').onclick = () => renderKB(document.getElementById('kbSearch').value);
+renderTagIndex();
+renderKB('');
+
+
+
+// ---------- CHIT-CHAT ----------
+pages.innerHTML += `
+<div class="pagesec section-hidden" id="page-chitchat">
+  <div class="card">
+    <div class="eyebrow" data-i18n="teamActivity">Team activity</div>
+    <div class="title" data-i18n="chitchatTitle">Chit-chat</div>
+    <div style="font-size:11.5px; color:var(--muted); margin-top:4px;">Logins, likes, comments and tags all show up here. Only the owner can edit or remove entries.</div>
+  </div>
+  <div class="card">
+    <textarea data-i18n-ph="sayToTeamPlaceholder" placeholder="Say something to the team..." style="min-height:50px;"></textarea>
+    <button class="btn-primary tap" style="margin-top:8px;" data-i18n="post">Post</button>
+  </div>
+  <div class="card">
+    <div class="row" style="justify-content:space-between;">
+      <div class="row"><div class="avatar" style="width:26px; height:26px; font-size:11px;">D</div><span style="font-size:12.5px;"><b>Amanda</b> logged in — 9:02 AM</span></div>
+      <span style="font-size:14px; color:var(--muted); cursor:pointer;">⋯</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row" style="justify-content:space-between; margin-bottom:6px;">
+      <div class="row"><div class="avatar" style="width:26px; height:26px; font-size:11px;">R</div><span style="font-size:12.5px;"><b>Nayla</b> — Sep 06, 10:14 AM</span></div>
+      <span style="font-size:14px; color:var(--muted); cursor:pointer;" title="Owner can edit/delete">✎</span>
+    </div>
+    <div style="font-size:13px; margin-bottom:8px;">Quick question — is tomorrow's 1pm slot still open? 😊 <span class="tag">@Gisel</span></div>
+    <div class="row" style="gap:10px;">
+      <span style="font-size:11.5px; color:var(--muted);">❤️ 2</span>
+      <span style="font-size:11.5px; color:var(--muted);">💬 1 comment</span>
+    </div>
+    <div class="divider"></div>
+    <div class="row"><div class="avatar" style="width:22px; height:22px; font-size:10px;">G</div><span style="font-size:12px;"><b>Gisel:</b> yes it's open, go ahead and book it!</span></div>
+  </div>
+  <div class="card">
+    <div class="row"><div class="avatar" style="width:26px; height:26px; font-size:11px;">A</div><span style="font-size:12.5px;"><b>IG Admin</b> tagged <b>Sarah T.</b>'s booking as confirmed — Sep 06, 11:40 AM</span></div>
+  </div>
+</div>`;
+
+// ---------- PRICING & REPORTS (owner/admin only) ----------
+const PRICING = {
+  owner: {label:'Owner', sections:[
+    {name:'Base', items:[
+      ['Manicure / Pedicure','100K'],['Basic Nail Gel (mani/pedi + 1 color)','150K'],['Basic Overlay Gel ★FAV','250K'],
+      ['BIAB 🆕','350K'],['Standard Extension','30K/finger'],['Premium Extension ★FAV 🆕','40K/finger'],
+      ['Fake Nails for Pedicure','10K/finger'],['Nail Repair 🆕','+15K/finger']]},
+    {name:'Remove', items:[['Remove Gel','75K'],['Remove Overlay/Extension','100–150K'],['Remove Acc/3D','10–15K/finger']]},
+    {name:'Callus Treatment — Kumi 🆕', items:[['Callus Treatment','300K'],['Callus Treatment + Nail Gel','400K'],['Callus Treatment + Nail Art (free 4 fake nails)','500K']]},
+    {name:'Press-On Nails', items:[['Regular Shape & Size','150K'],['Custom Shape & Size ★FAV','200K'],['Upgraded Glue & Tools','50K']]}
+  ]},
+  nayla: {label:'Nayla (senior)', sections:[
+    {name:'Base', items:[
+      ['Manicure / Pedicure','75K'],['Basic Nail Gel (mani/pedi + 1 color)','110K'],['Basic Overlay Gel ★FAV','175K'],
+      ['BIAB 🆕','200K'],['Standard Extension','22.5K/finger'],['Premium Extension ★FAV','30K/finger'],
+      ['Fake Nails for Pedicure','5K/finger'],['Nail Repair 🆕','5K/finger']]},
+    {name:'Remove', items:[['Remove Gel','50K'],['Remove Overlay/Extension','75–100K'],['Remove Acc/3D','5K/finger']]},
+    {name:'Callus Treatment — Kumi', items:[['Callus Treatment','250K'],['Callus Treatment + Nail Gel','350K'],['Callus Treatment + Nail Art','425K']]},
+    {name:'Press-On Nails', items:[['Regular Shape & Size','85K'],['Custom Shape & Size ★FAV','125K'],['Upgraded Glue & Tools','30K']]}
+  ]},
+  amanda: {label:'Amanda (junior)', sections:[
+    {name:'Base', items:[
+      ['Manicure / Pedicure','40K'],['Basic Nail Gel (mani/pedi + 1 color)','75K'],['Basic Overlay Gel','110K'],
+      ['BIAB','—'],['Standard Extension','12.5K/finger'],['Premium Extension','—'],
+      ['Fake Nails for Pedicure','5K/finger'],['Nail Repair','—']]},
+    {name:'Remove', items:[['Remove Gel','45K'],['Remove Overlay/Extension','60K'],['Remove Acc/3D','5K/finger']]},
+    {name:'Callus Treatment — Kumi', items:[['Callus Treatment','200K'],['Callus Treatment + Nail Gel','300K'],['Callus Treatment + Nail Art','350K']]},
+    {name:'Press-On Nails', items:[['Regular Shape & Size','70K'],['Custom Shape & Size','100K'],['Upgraded Glue & Tools','30K']]}
+  ]}
+};
+pages.innerHTML += `
+<div class="pagesec section-hidden" id="page-pricing">
+  <div class="card">
+    <div class="eyebrow" data-i18n="ownerAdminOnly">Owner & Admin only</div>
+    <div class="title" data-i18n="pricingReports">Pricing & reports</div>
+    <div style="font-size:11.5px; color:var(--muted); margin-top:4px;">Nail artists don't see this page — only their own price list is used automatically when logging a visit.</div>
+  </div>
+  <div class="row" style="gap:6px; margin-bottom:4px;">
+    <button class="pill active tap" data-pricewho="owner" style="flex:1; text-align:center; font-size:11px;">Owner</button>
+    <button class="pill tap" data-pricewho="nayla" style="flex:1; text-align:center; font-size:11px;">Nayla</button>
+    <button class="pill tap" data-pricewho="amanda" style="flex:1; text-align:center; font-size:11px;">Amanda</button>
+  </div>
+  <div id="priceSheet"></div>
+
+  <div class="card">
+    <div style="font-weight:600; font-size:13.5px; margin-bottom:6px;" data-i18n="loyaltyCardAuto">🎁 Loyalty card — automatic</div>
+    <div style="font-size:11.5px; color:var(--muted); margin-bottom:8px;">Applies by visit count, calculated off that client's design price.</div>
+    <div style="font-size:12.5px; padding:5px 0; border-top:1px solid var(--hairline);"><b>Visit 2</b> — 2 of 10 designs free (design price ÷10 × 2 comped)</div>
+    <div style="font-size:12.5px; padding:5px 0; border-top:1px solid var(--hairline);"><b>Visit 5</b> — 4 of 10 designs free (design price ÷10 × 4 comped)</div>
+    <div style="font-size:12.5px; padding:5px 0; border-top:1px solid var(--hairline);"><b>Visit 8</b> — 15% off the entire visit total</div>
+    <div style="font-size:12.5px; padding:5px 0; border-top:1px solid var(--hairline);"><b>Visit 10</b> — basic gel is free; if extension is used instead, the extension price is reduced by the basic gel price</div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+      <div style="font-weight:600; font-size:13.5px;" data-i18n="customVouchers">🏷️ Custom vouchers</div>
+      <button class="btn-ghost tap" style="font-size:10.5px; padding:5px 10px;">+ Add (owner only)</button>
+    </div>
+    <div class="row" style="justify-content:space-between; padding:6px 0; border-top:1px solid var(--hairline);"><span style="font-size:12.5px;">BIRTHDAY10 — 10% off, birthday month</span><span class="tag">Active</span></div>
+    <div class="row" style="justify-content:space-between; padding:6px 0; border-top:1px solid var(--hairline);"><span style="font-size:12.5px;">REFER50K — Rp50K off for referrals</span><span class="tag">Active</span></div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:600; font-size:13.5px; margin-bottom:2px;" data-i18n="monthlySummaryTitle">📊 Monthly summary</div>
+    <div style="font-size:11px; color:var(--muted); margin-bottom:10px;">Auto-generated on the last day of each month — per artist, split into hand nail art, feet nail art/callus removal, and press-on nails.</div>
+    <div id="monthlySummary"></div>
+  </div>
+</div>`;
+
+function renderPriceSheet(who){
+  const p = PRICING[who];
+  document.getElementById('priceSheet').innerHTML = `
+    <div class="card">
+      <div class="title" style="font-size:15px;">${p.label}'s price list</div>
+      ${p.sections.map(sec => `
+        <div style="margin-top:10px;">
+          <div style="font-size:11px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:.02em; margin-bottom:4px;">${sec.name}</div>
+          ${sec.items.map(([label,price]) => `
+            <div class="row" style="justify-content:space-between; padding:5px 0; border-top:1px solid var(--hairline);">
+              <span style="font-size:12px;">${label}</span>
+              <input value="${price}" style="width:88px; text-align:right; font-size:12px; padding:5px 7px;" />
+            </div>`).join('')}
+        </div>`).join('')}
+      <div style="font-size:10.5px; color:var(--muted); margin-top:10px;">Prices shown here are used automatically when logging a visit for ${p.label} — edit anytime, changes apply going forward only.</div>
+    </div>`;
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-pricewho]');
+  if (b){
+    document.querySelectorAll('[data-pricewho]').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    renderPriceSheet(b.dataset.pricewho);
+  }
+});
+renderPriceSheet('owner');
+
+const MONTHLY_SUMMARY = {
+  Nayla: {clients:14, hand:9, feet:3, pressOn:2, total:'3,240K'},
+  Amanda: {clients:9, hand:5, feet:2, pressOn:2, total:'1,510K'}
+};
+document.getElementById('monthlySummary').innerHTML = Object.entries(MONTHLY_SUMMARY).map(([name,s]) => `
+  <div style="padding:8px 0; border-top:1px solid var(--hairline);">
+    <div class="row" style="justify-content:space-between; margin-bottom:6px;">
+      <span style="font-weight:600; font-size:13px;">${name}</span>
+      <span class="tag">${s.clients} clients</span>
+    </div>
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
+      <span class="tag">💅 Hand: ${s.hand}</span>
+      <span class="tag">🦶 Feet/callus: ${s.feet}</span>
+      <span class="tag">✨ Press-on: ${s.pressOn}</span>
+    </div>
+    <div style="font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--accent);">Rp ${s.total} total this month</div>
+  </div>`).join('');
+
+// ---------- TEAM ----------
+pages.innerHTML += `
+<div class="pagesec section-hidden" id="page-team">
+  <div class="card">
+    <div class="eyebrow" data-i18n="yourTeam">Your team</div>
+    <div class="title" data-i18n="nailArtistsAdmin">Nail artists & admin</div>
+    <div style="font-size:10.5px; color:var(--muted); margin-top:4px;" data-i18n="ownerEditOnly">Only the owner can edit this page.</div>
+  </div>
+  <div class="card">
+    <div class="row">
+      <div class="avatar">R</div>
+      <div style="flex:1">
+        <div style="font-weight:600; font-size:14px;">Nayla</div>
+        <div style="font-size:11.5px; color:var(--muted);">Senior nail artist · Tue–Fri</div>
+      </div>
+      <span class="tag">Editor</span>
+    </div>
+    <div style="font-size:12px; color:var(--text); margin-top:8px; padding-left:50px;">3 years experience, specializes in chrome and minimalist sets.</div>
+  </div>
+  <div class="card">
+    <div class="row">
+      <div class="avatar">D</div>
+      <div style="flex:1">
+        <div style="font-weight:600; font-size:14px;">Amanda</div>
+        <div style="font-size:11.5px; color:var(--muted);">Junior nail artist · Mon–Sat</div>
+      </div>
+      <span class="tag">Editor</span>
+    </div>
+    <div style="font-size:12px; color:var(--text); margin-top:8px; padding-left:50px;">Joined this year, great with 3D charms and bold color work.</div>
+  </div>
+  <div class="card">
+    <div class="row">
+      <div class="avatar">A</div>
+      <div style="flex:1">
+        <div style="font-weight:600; font-size:14px;">Instagram Admin</div>
+        <div style="font-size:11.5px; color:var(--muted);">Handles chats, scheduling posts</div>
+      </div>
+      <span class="tag">Admin-managed</span>
+    </div>
+    <div style="font-size:12px; color:var(--text); margin-top:8px; padding-left:50px;">Manages DMs, comments, and posting schedule.</div>
+  </div>
+</div>`;
+
+// ---------- ADMIN ----------
+pages.innerHTML += `
+<div class="pagesec section-hidden" id="page-admin">
+  <div class="card">
+    <div class="eyebrow" data-i18n="ownerControls">Owner controls</div>
+    <div class="title" data-i18n="adminTitle">Admin</div>
+  </div>
+  <div class="card">
+    <div style="font-weight:600; font-size:13.5px; margin-bottom:2px;" data-i18n="teamPageAccess">Team & page access</div>
+    <div style="font-size:11.5px; color:var(--muted); margin-bottom:10px;">Tap a chip to cycle its access level for that page. Usernames and passwords are visible to you so you can help anyone who's locked out — tap 👁️ to reveal.</div>
+    <div id="permMatrix"></div>
+    <button class="btn-primary tap" style="width:100%; margin-top:12px;">+ Add person</button>
+  </div>
+  <div class="card">
+    <div style="font-weight:600; font-size:13.5px; margin-bottom:10px;" data-i18n="loginAccess">Login access</div>
+    <div class="row" style="justify-content:space-between; margin-bottom:10px;">
+      <span style="font-size:13px;">Show password on login</span>
+      <div class="toggle tap"><div class="knob"></div></div>
+    </div>
+    <div style="font-size:11.5px; color:var(--muted);">Each person you add gets their own login, linked to the calendar and the client list — their view filters automatically based on their access below.</div>
+  </div>
+  <div class="card">
+    <div style="font-weight:600; font-size:13.5px; margin-bottom:10px;" data-i18n="theme">Theme</div>
+    <div class="themeRow" id="themeRow"></div>
+  </div>
+</div>`;
+
+// theme swatches
+const themeRow = document.getElementById('themeRow');
+Object.entries(THEMES).forEach(([name, th]) => {
+  const s = document.createElement('div');
+  s.className = 'swatch tap' + (name==='pink' ? ' active' : '');
+  s.dataset.theme = name;
+  s.style.background = th.accent;
+  s.onclick = () => applyTheme(name);
+  themeRow.appendChild(s);
+});
+
+// toggle interactivity (mockup only)
+document.addEventListener('click', e => {
+  if (e.target.closest('.toggle')) e.target.closest('.toggle').classList.toggle('on');
+});
+
+
+
+// ---------- PERMISSION MATRIX (Admin tab) ----------
+const pwVisible = {};
+function renderMatrix(){
+  const el = document.getElementById('permMatrix');
+  el.innerHTML = people.map((p, pi) => `
+    <div style="padding:10px 0; border-top:1px solid var(--hairline);">
+      <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+        <div class="row"><div class="avatar" style="width:28px; height:28px; font-size:11px;">${p.name[0]}</div>
+          <div><div style="font-size:13px; font-weight:600;">${p.name}${p.locked ? ' (you)' : ''}</div><div style="font-size:10px; color:var(--muted);">${p.role}</div></div></div>
+      </div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; padding-left:38px; margin-bottom:8px;">
+        ${PAGES_FOR_MATRIX.map(pg => `
+          <button class="pill tap" data-person="${pi}" data-page="${pg}" style="font-size:10px; padding:4px 8px; ${p.locked ? 'opacity:.5; pointer-events:none;' : ''} ${p.access[pg]===2 ? 'background:var(--accent); color:#fff; border-color:var(--accent);' : p.access[pg]===1 ? 'background:var(--tint); color:var(--text);' : ''}">${pg}: ${LEVELS[p.access[pg]]}</button>
+        `).join('')}
+      </div>
+      <div style="padding-left:38px; display:flex; gap:6px; align-items:center;">
+        <input readonly value="${p.username}" style="font-size:11px; padding:6px 8px; flex:1;" />
+        <input readonly type="${pwVisible[pi] ? 'text' : 'password'}" value="${p.password}" style="font-size:11px; padding:6px 8px; flex:1;" />
+        <span class="tap" data-pwtoggle="${pi}" style="cursor:pointer; font-size:14px;">${pwVisible[pi] ? '🙈' : '👁️'}</span>
+        <button class="btn-ghost tap" style="font-size:10px; padding:6px 8px;">Reset</button>
+      </div>
+    </div>`).join('');
+  el.querySelectorAll('[data-person]').forEach(btn => {
+    btn.onclick = () => {
+      const pi = +btn.dataset.person, pg = btn.dataset.page;
+      people[pi].access[pg] = (people[pi].access[pg] + 1) % 3;
+      renderMatrix();
+    };
+  });
+  el.querySelectorAll('[data-pwtoggle]').forEach(btn => {
+    btn.onclick = () => {
+      const pi = +btn.dataset.pwtoggle;
+      pwVisible[pi] = !pwVisible[pi];
+      renderMatrix();
+    };
+  });
+}
+renderMatrix();
+
+showPage('home');
+
+// ---------- LANGUAGE TOGGLE (mockup demo) ----------
+const TRANSLATIONS = {
+  en: {home:'Home', clients:'Clients', calendar:'Bookings', knowledge:'Knowledge', chitchat:'Chit-chat', team:'Team', pricing:'Pricing', admin:'Admin',
+    thisWeek:'This week', bookings:'Bookings', teamCalendar:'Group calendar', privateCalendar:'Personal calendar', goodMorning:'Good morning, Gisel',
+    today:'Today', homeDefaultNote:'Home is set as your default page — it opens here automatically when you log in.', announcements:'Announcements',
+    addOwnerOnly:'+ Add (owner only)', upcomingBirthdays:'Upcoming birthdays',
+    loggedInAs:'Logged in as', clientList:'Client list', clientsVisits:'Clients & visits', searchClientsPlaceholder:'Search name, style, notes...',
+    search:'Search', exampleSharedClient:'Example — shared client', addVisit:'+ Add visit',
+    showScheduleFor:"Show schedule for:", googleCalendarSync:'Google Calendar sync', connectGoogleCalendar:'Connect Google Calendar',
+    adminKnowledgeBase:'Admin knowledge base', qaLibrary:'Q&A library', searchKnowledgePlaceholder:'Search every word in every entry...',
+    browseByHashtag:'Browse by hashtag (owner can add new ones):', addMaterial:'+ Add material', guidance:'Guidance', teamGuidance:'Team guidance',
+    teamActivity:'Team activity', chitchatTitle:'Chit-chat', sayToTeamPlaceholder:'Say something to the team...', post:'Post',
+    yourTeam:'Your team', nailArtistsAdmin:'Nail artists & admin', ownerEditOnly:'Only the owner can edit this page.',
+    ownerAdminOnly:'Owner & Admin only', pricingReports:'Pricing & reports', loyaltyCardAuto:'🎁 Loyalty card — automatic',
+    customVouchers:'🏷️ Custom vouchers', monthlySummaryTitle:'📊 Monthly summary',
+    ownerControls:'Owner controls', adminTitle:'Admin', teamPageAccess:'Team & page access', loginAccess:'Login access', theme:'Theme'},
+  id: {home:'Beranda', clients:'Klien', calendar:'Booking', knowledge:'Pengetahuan', chitchat:'Obrolan', team:'Tim', pricing:'Harga', admin:'Admin',
+    thisWeek:'Minggu ini', bookings:'Booking', teamCalendar:'Kalender grup', privateCalendar:'Kalender pribadi', goodMorning:'Selamat pagi, Gisel',
+    today:'Hari ini', homeDefaultNote:'Beranda diatur sebagai halaman utama Anda — otomatis terbuka saat Anda masuk.', announcements:'Pengumuman',
+    addOwnerOnly:'+ Tambah (khusus pemilik)', upcomingBirthdays:'Ulang tahun mendatang',
+    loggedInAs:'Masuk sebagai', clientList:'Daftar klien', clientsVisits:'Klien & kunjungan', searchClientsPlaceholder:'Cari nama, gaya, catatan...',
+    search:'Cari', exampleSharedClient:'Contoh — klien bersama', addVisit:'+ Tambah kunjungan',
+    showScheduleFor:'Tampilkan jadwal untuk:', googleCalendarSync:'Sinkronisasi Google Kalender', connectGoogleCalendar:'Hubungkan Google Kalender',
+    adminKnowledgeBase:'Basis pengetahuan admin', qaLibrary:'Pustaka Tanya Jawab', searchKnowledgePlaceholder:'Cari setiap kata di setiap entri...',
+    browseByHashtag:'Jelajahi berdasarkan tagar (pemilik dapat menambah yang baru):', addMaterial:'+ Tambah materi', guidance:'Panduan', teamGuidance:'Panduan tim',
+    teamActivity:'Aktivitas tim', chitchatTitle:'Obrolan', sayToTeamPlaceholder:'Katakan sesuatu ke tim...', post:'Kirim',
+    yourTeam:'Tim Anda', nailArtistsAdmin:'Nail artist & admin', ownerEditOnly:'Hanya pemilik yang dapat mengedit halaman ini.',
+    ownerAdminOnly:'Khusus pemilik & admin', pricingReports:'Harga & laporan', loyaltyCardAuto:'🎁 Kartu loyalitas — otomatis',
+    customVouchers:'🏷️ Voucher khusus', monthlySummaryTitle:'📊 Ringkasan bulanan',
+    ownerControls:'Kontrol pemilik', adminTitle:'Admin', teamPageAccess:'Tim & akses halaman', loginAccess:'Akses login', theme:'Tema'}
+};
+let currentLang = 'en';
+function applyLang(){
+  const dict = TRANSLATIONS[currentLang];
+  document.querySelectorAll('.navbtn').forEach(b => {
+    const key = b.dataset.key;
+    const spans = b.querySelectorAll('span');
+    if (spans[1] && dict[key]) spans[1].textContent = dict[key];
+  });
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.dataset.i18n;
+    if (dict[key]) el.textContent = dict[key];
+  });
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => {
+    const key = el.dataset.i18nPh;
+    if (dict[key]) el.placeholder = dict[key];
+  });
+  document.getElementById('langToggle').textContent = currentLang==='en' ? '🌐 EN → ID' : '🌐 ID → EN';
+}
+document.getElementById('langToggle').onclick = () => { currentLang = currentLang==='en'?'id':'en'; applyLang(); };
+applyLang();
+
+} // end initApp()
+</script>
+</body>
+</html>
