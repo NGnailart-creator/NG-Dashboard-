@@ -76,16 +76,16 @@
 <div class="page" id="pages"></div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
+// ---------- SUPABASE ----------
+const SUPABASE_URL = 'https://avetybynptepfqmxedfj.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2ZXR5YnlucHRlcGZxbXhlZGZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3NTA4NjEsImV4cCI6MjEwMzMyNjg2MX0.PPvK1EnSfV0QDE-OkoEpD7WhgU3CM048IL5YLypCtHc';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 // ---------- STAFF / LOGIN ----------
-// TODO: once Supabase is connected, replace this with a real `staff` table lookup.
 const LEVELS = ['None', 'View', 'Edit'];
-const people = [
-  {name:'Gisel', role:'Owner', locked:true, username:'gisel_owner', password:'owner2026', access:{Clients:2, Bookings:2, Knowledge:2, 'Chit-chat':2}},
-  {name:'Nayla', role:'Senior artist', locked:false, username:'nayla_senior', password:'nayla2026', access:{Clients:1, Bookings:2, Knowledge:1, 'Chit-chat':1}},
-  {name:'Amanda', role:'Junior artist', locked:false, username:'amanda_jr', password:'amanda123', access:{Clients:1, Bookings:2, Knowledge:1, 'Chit-chat':1}},
-  {name:'IG Admin', role:'Instagram admin', locked:false, username:'ng_igadmin', password:'admin2026', access:{Clients:1, Bookings:2, Knowledge:1, 'Chit-chat':1}}
-];
+let people = []; // loaded from ngd_staff after login
 let currentUser = null;
 
 document.getElementById('loginPwToggle').onclick = () => {
@@ -94,11 +94,22 @@ document.getElementById('loginPwToggle').onclick = () => {
 };
 document.getElementById('loginBtn').onclick = attemptLogin;
 document.getElementById('loginPass').addEventListener('keydown', e => { if (e.key==='Enter') attemptLogin(); });
-function attemptLogin(){
+async function attemptLogin(){
   const u = document.getElementById('loginUser').value.trim();
   const p = document.getElementById('loginPass').value;
+  const btn = document.getElementById('loginBtn');
+  btn.textContent = 'Logging in...';
+  const { data: staffRows, error } = await sb.from('ngd_staff').select('*').order('created_at');
+  btn.textContent = 'Log in';
+  if (error){
+    document.getElementById('loginError').textContent = 'Could not reach the database. Check your connection and try again.';
+    document.getElementById('loginError').style.display = 'block';
+    return;
+  }
+  people = staffRows.map(r => ({ id:r.id, name:r.name, role:r.role, locked:r.role==='Owner', username:r.username, password:r.password, access:r.access }));
   const match = people.find(person => person.username === u && person.password === p);
   if (!match){
+    document.getElementById('loginError').textContent = 'Username or password not recognized.';
     document.getElementById('loginError').style.display = 'block';
     return;
   }
@@ -175,17 +186,17 @@ pages.innerHTML += `
   </div>
   <div class="card">
     <div class="eyebrow" data-i18n="upcomingBirthdays">Upcoming birthdays</div>
-    <div style="font-size:13px; margin-top:6px;">🎂 Sarah T. — Mar 14</div>
-    <div style="font-size:13px; margin-top:6px;">🎂 Bella K. — Sep 20</div>
+    <div id="homeBirthdays" style="font-size:13px; margin-top:6px; color:var(--muted);">Loading...</div>
   </div>
 </div>`;
 
 // ---------- CLIENTS ----------
-const clients = [
-  {name:'Sarah T.', birthday:'Mar 14', visits:5, last:'Aug 28', artist:'Nayla (senior)', pref:['chrome','minimalist'], rating:5, note:'Loves nude tones, always books 2hr slot, sensitive cuticles.', privateNote:'Written by Nayla — mentioned she\'s going through a rough divorce, prefers not to talk about work during her session.', sharedNote:'Prefers text reminders over calls.'},
-  {name:'Bella K.', birthday:'Sep 20', visits:2, last:'Sep 02', artist:'Amanda (junior)', pref:['3D charms','bold color'], rating:4, note:'First-timer became regular. Asked about loyalty reward at visit 3.', privateNote:'Written by Amanda — new mom, might bring baby along, keep sessions under 90 min if possible.', sharedNote:'Birthday coming up Sep 20 — consider a small discount.'},
-  {name:'Meidy R.', birthday:'Nov 02', visits:8, last:'Sep 05', artist:'Nayla (senior)', pref:['french tip','gel'], rating:5, note:'VIP — free add-on earned at visit 8. Always brings reference photos.', privateNote:'Written by Gisel — referred 3 friends, treat as VIP for scheduling priority.', sharedNote:'Always tips well, offer the new charm designs first.'}
-];
+let clients = []; // loaded from ngd_clients
+function mapClientRow(r){
+  return { id:r.id, name:r.name, birthday:r.birthday||'—', visits:r.visits||0, last:r.last_visit||'—', artist:r.artist||'—',
+    pref:r.pref||[], rating:r.rating||5, note:r.note||'', privateNote:r.private_note ? `Written by ${r.private_note_author}: ${r.private_note}` : 'No private note yet.',
+    sharedNote:r.shared_note || 'No shared note yet.' };
+}
 function clientCardHtml(c){
   return `
   <div class="card">
@@ -233,14 +244,8 @@ pages.innerHTML += `
   </div>
   <div id="clientResults"></div>
   <div class="card">
-    <div class="eyebrow" data-i18n="exampleSharedClient">Example — shared client</div>
-    <div class="title" style="font-size:15.5px;">Meidy R. — visit history</div>
-    <div class="divider"></div>
-    <div style="font-size:12.5px; margin-bottom:8px;"><b>Sep 05</b> — Nayla (senior) — gel, french tip <span class="tag" style="margin-left:4px;">on calendar</span></div>
-    <div style="font-size:12.5px; margin-bottom:8px;"><b>Jul 14</b> — Amanda (junior) — gel refill <span class="tag" style="margin-left:4px;">on calendar</span></div>
-    <div style="font-size:12.5px;"><b>May 02</b> — Nayla (senior) — gel, chrome <span class="tag" style="margin-left:4px;">on calendar</span></div>
-    <div style="font-size:11px; color:var(--muted); margin-top:8px;">Only the owner sees this combined view across artists — each artist's own page only shows the visits they personally handled.</div>
-    <button class="btn-primary tap" style="width:100%; margin-top:10px;" data-i18n="addVisit">+ Add visit</button>
+    <button class="btn-primary tap" id="addClientBtn" style="width:100%;">+ Add client</button>
+    <div id="addClientForm"></div>
   </div>
 </div>`;
 const isOwnerOrAdmin = currentUser.role === 'Owner' || currentUser.role === 'Instagram admin';
@@ -251,11 +256,39 @@ function renderClients(filter){
   const f = (filter||'').toLowerCase().trim();
   const scoped = isOwnerOrAdmin ? clients : clients.filter(c => c.artist.startsWith(currentUser.name));
   const results = scoped.filter(c => !f || (c.name+' '+c.pref.join(' ')+' '+c.note+' '+c.sharedNote+' '+c.artist).toLowerCase().includes(f));
-  document.getElementById('clientResults').innerHTML = results.length ? results.map(clientCardHtml).join('') : `<div class="card"><div style="font-size:12.5px; color:var(--muted);">No clients match — try a different word.</div></div>`;
+  document.getElementById('clientResults').innerHTML = results.length ? results.map(clientCardHtml).join('') : `<div class="card"><div style="font-size:12.5px; color:var(--muted);">No clients yet — add your first one below.</div></div>`;
 }
 document.getElementById('clientSearch').oninput = e => renderClients(e.target.value);
 document.getElementById('clientSearchBtn').onclick = () => renderClients(document.getElementById('clientSearch').value);
-renderClients('');
+document.getElementById('addClientBtn').onclick = () => {
+  document.getElementById('addClientForm').innerHTML = `
+    <div class="divider"></div>
+    <div style="display:grid; gap:8px;">
+      <input id="newClientName" placeholder="Client name" />
+      <input id="newClientBirthday" placeholder="Birthday (e.g. Mar 14)" />
+      <input id="newClientArtist" placeholder="Nail artist (e.g. Nayla (senior))" value="${currentUser.role==='Owner'||currentUser.role==='Instagram admin' ? '' : currentUser.name}" />
+      <input id="newClientPref" placeholder="Style preferences, comma separated" />
+      <textarea id="newClientNote" placeholder="Notes" style="min-height:50px;"></textarea>
+      <button class="btn-primary tap" id="saveNewClientBtn" style="width:100%;">Save client</button>
+    </div>`;
+  document.getElementById('saveNewClientBtn').onclick = async () => {
+    const name = document.getElementById('newClientName').value.trim();
+    if (!name) return;
+    const payload = {
+      name,
+      birthday: document.getElementById('newClientBirthday').value.trim(),
+      artist: document.getElementById('newClientArtist').value.trim(),
+      pref: document.getElementById('newClientPref').value.split(',').map(s=>s.trim()).filter(Boolean),
+      rating: 5, note: document.getElementById('newClientNote').value.trim(),
+      private_note: '', private_note_author: '', shared_note: '', visits: 0, last_visit: ''
+    };
+    const { data, error } = await sb.from('ngd_clients').insert(payload).select().single();
+    if (error){ alert('Could not save client: ' + error.message); return; }
+    clients.push(mapClientRow(data));
+    document.getElementById('addClientForm').innerHTML = '';
+    renderClients(document.getElementById('clientSearch').value);
+  };
+};
 
 
 
@@ -305,17 +338,12 @@ pages.innerHTML += `
 
 // ---------- CALENDAR GRID ----------
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-const CAL_BOOKINGS = {
-  '2026-7-28': [{client:'Sarah T.', artist:'Nayla (senior)', time:'11:00 AM', service:'gel refill', status:'Confirmed', group:true, people:['Nayla']}],
-  '2026-8-9':  [{client:'Sarah T.', artist:'Nayla (senior)', time:'1:00 PM', service:'chrome + minimalist', status:'Confirmed', group:true, people:['Nayla']}],
-  '2026-8-10': [{client:'Bella K.', artist:'Amanda (junior)', time:'4:00 PM', service:'deposit pending', status:'Awaiting', group:true, people:['Amanda','IG Admin']}],
-  '2026-8-14': [{client:'', artist:'Gisel', time:'All day', service:'Sarah T.\'s birthday reminder', status:'Personal', group:false, people:['Gisel']}],
-  '2026-9-2':  [{client:'Meidy R.', artist:'Nayla (senior)', time:'10:00 AM', service:'french tip + gel', status:'Confirmed', group:true, people:['Nayla','Gisel']}]
-};
+let CAL_BOOKINGS = {}; // loaded from ngd_bookings
+const _today = new Date();
 let calMode = 'team';
 let calWho = 'everyone';
-let cursor = {year:2026, month:8}; // September = index 8
-let selectedDay = 9;
+let cursor = {year:_today.getFullYear(), month:_today.getMonth()};
+let selectedDay = _today.getDate();
 function keyFor(d){ return `${cursor.year}-${cursor.month}-${d}`; }
 function matchesFilter(b){
   const modeOk = calMode==='team' ? b.group : !b.group;
@@ -398,7 +426,11 @@ document.addEventListener('click', e => {
   if (rm) {
     const idx = +rm.dataset.remove;
     const items = CAL_BOOKINGS[keyFor(selectedDay)];
-    if (items) { items.splice(idx,1); if (!items.length) delete CAL_BOOKINGS[keyFor(selectedDay)]; }
+    if (items) {
+      const [removed] = items.splice(idx,1);
+      if (!items.length) delete CAL_BOOKINGS[keyFor(selectedDay)];
+      if (removed && removed.id) sb.from('ngd_bookings').delete().eq('id', removed.id).then(()=>{});
+    }
     renderCalGrid(); showCalDay();
     return;
   }
@@ -407,25 +439,47 @@ document.addEventListener('click', e => {
   if (e.target.closest('#calAddBtn')) {const card = document.getElementById('calDayCard');
     const isTeam = calMode==='team';
     if (document.getElementById('calAddForm')) return;
+    const clientOptions = ['<option value="">No client / personal</option>'].concat(clients.map(c=>`<option value="${c.name}">${c.name}</option>`)).join('');
     card.innerHTML += `
       <div class="divider"></div>
       <div id="calAddForm" style="font-size:11.5px; font-weight:600; margin-bottom:6px;">${isTeam ? 'New booking' : 'New personal note'}</div>
       <div style="display:grid; gap:8px;">
-        ${isTeam ? `<select><option>Client — select or add new</option><option>Sarah T.</option><option>Bella K.</option><option>Meidy R.</option><option>+ New client</option></select>` : ''}
+        ${isTeam ? `<select id="calFormClient">${clientOptions}</select>` : ''}
         <div style="font-size:11px; color:var(--muted);">Who's on this ${isTeam?'booking':'note'}? (tap to add their name)</div>
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
-          ${['Gisel','Nayla','Amanda','IG Admin'].map(p=>`<span class="pill tap" data-pickperson="${p}" style="font-size:11px; padding:5px 10px;">${p}</span>`).join('')}
+          ${people.map(p=>`<span class="pill tap" data-pickperson="${p.name}" style="font-size:11px; padding:5px 10px;">${p.name}</span>`).join('')}
         </div>
-        <input placeholder="Time (e.g. 2:00 PM)" />
-        <input placeholder="${isTeam ? 'Service' : 'What is this note about?'}" />
-        <textarea placeholder="Notes" style="min-height:50px;"></textarea>
-        <button class="btn-primary tap" style="width:100%;">Save to calendar</button>
+        <input id="calFormTime" placeholder="Time (e.g. 2:00 PM)" />
+        <input id="calFormService" placeholder="${isTeam ? 'Service' : 'What is this note about?'}" />
+        <textarea id="calFormNotes" placeholder="Notes" style="min-height:50px;"></textarea>
+        <button class="btn-primary tap" id="calSaveBtn" style="width:100%;">Save to calendar</button>
       </div>`;
     return;
   }
+  if (e.target.closest('#calSaveBtn')) {
+    (async () => {
+      const isTeam = calMode==='team';
+      const clientSel = document.getElementById('calFormClient');
+      const clientName = clientSel ? clientSel.value : '';
+      const pickedPeople = [...document.querySelectorAll('[data-pickperson].active')].map(el=>el.dataset.pickperson);
+      const time = document.getElementById('calFormTime').value.trim() || 'All day';
+      const service = document.getElementById('calFormService').value.trim();
+      const dateStr = `${cursor.year}-${String(cursor.month+1).padStart(2,'0')}-${String(selectedDay).padStart(2,'0')}`;
+      const payload = {
+        client_name: clientName, artist: currentUser.name, people: pickedPeople.length?pickedPeople:[currentUser.name],
+        booking_date: dateStr, booking_time: time, service, status: 'Confirmed', is_group: isTeam
+      };
+      const { data, error } = await sb.from('ngd_bookings').insert(payload).select().single();
+      if (error){ alert('Could not save: ' + error.message); return; }
+      const key = keyFor(selectedDay);
+      if (!CAL_BOOKINGS[key]) CAL_BOOKINGS[key] = [];
+      CAL_BOOKINGS[key].push({ id:data.id, client:clientName, artist:currentUser.name, time, service, status:'Confirmed', group:isTeam, people:payload.people });
+      renderCalGrid(); showCalDay();
+    })();
+    return;
+  }
 });
-renderCalGrid();
-showCalDay();
+
 document.getElementById('calWhoFilter').onchange = e => { calWho = e.target.value; renderCalGrid(); showCalDay(); };
 
 // ---------- KNOWLEDGE BASE ----------
@@ -443,28 +497,25 @@ pages.innerHTML += `
     <div id="kbTagIndex" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
   </div>
   <div id="kbResults"></div>
-  <button class="btn-primary tap" style="width:100%;" data-i18n="addMaterial">+ Add material</button>
+  <button class="btn-primary tap" id="addMaterialBtn" style="width:100%;" data-i18n="addMaterial">+ Add material</button>
+  <div id="addMaterialForm"></div>
   <div class="card" style="margin-top:16px;">
     <div class="eyebrow" data-i18n="guidance">Guidance</div>
     <div class="title" style="font-size:16px;" data-i18n="teamGuidance">Team guidance</div>
     <div style="font-size:11.5px; color:var(--muted); margin-top:4px;">Separate from Q&A — entries here can only be added by the owner and admin.</div>
   </div>
-  <div class="card">
-    <div style="font-weight:600; font-size:13.5px;">Handling last-minute cancellations</div>
-    <div style="font-size:12.5px; color:var(--text); margin-top:6px; line-height:1.5;">Offer the next available slot first, then note the cancellation in the client's shared note so the next artist knows.</div>
-  </div>
+  <div id="guidanceResults"></div>
+  ${isOwnerOrAdmin ? `<button class="btn-ghost tap" id="addGuidanceBtn" style="width:100%;">+ Add guidance</button><div id="addGuidanceForm"></div>` : ''}
 </div>`;
 
-const KB_ITEMS = [
-  {q:'Can I get a discount for a group booking?', a:'Groups of 3+ get 10% off each service. Mention this only if they ask first — don\'t offer proactively.', tags:['pricing']},
-  {q:'What if I need to reschedule last minute?', a:'Deposit is non-refundable within 24 hours, but can be moved to a new date once, same month only.', tags:['policy']}
-];
+let KB_ITEMS = []; // loaded from ngd_kb_items
+let GUIDANCE_ITEMS = []; // loaded from ngd_guidance
 let activeTagFilter = null;
 function allTags(){ return [...new Set(KB_ITEMS.flatMap(it => it.tags))]; }
 function renderTagIndex(){
   document.getElementById('kbTagIndex').innerHTML = allTags().map(t => `
     <button class="pill tap" data-tag="${t}" style="font-size:10px; padding:4px 9px; ${activeTagFilter===t?'background:var(--accent); color:#fff; border-color:var(--accent);':''}">#${t}</button>
-  `).join('') + `<button class="pill tap" id="kbTagAdd" style="font-size:10px; padding:4px 9px;">+ hashtag (owner)</button>`;
+  `).join('') + (currentUser.role==='Owner' ? `<button class="pill tap" id="kbTagAdd" style="font-size:10px; padding:4px 9px;">+ hashtag (owner)</button>` : '');
   document.querySelectorAll('[data-tag]').forEach(btn => {
     btn.onclick = () => { activeTagFilter = activeTagFilter===btn.dataset.tag ? null : btn.dataset.tag; renderTagIndex(); renderKB(document.getElementById('kbSearch').value); };
   });
@@ -484,14 +535,59 @@ function renderKB(filter){
         ${it.tags.map(t => `<span class="tag">#${t}</span>`).join('')}
         <span class="tag" style="background:var(--accent); color:#fff;">✓ approved</span>
       </div>
-    </div>`).join('') : `<div class="card"><div style="font-size:12.5px; color:var(--muted);">No matches — try a different word or hashtag.</div></div>`;
+    </div>`).join('') : `<div class="card"><div style="font-size:12.5px; color:var(--muted);">No materials yet — add the first one below.</div></div>`;
+}
+function renderGuidance(){
+  document.getElementById('guidanceResults').innerHTML = GUIDANCE_ITEMS.length ? GUIDANCE_ITEMS.map(g => `
+    <div class="card">
+      <div style="font-weight:600; font-size:13.5px;">${g.title}</div>
+      <div style="font-size:12.5px; color:var(--text); margin-top:6px; line-height:1.5;">${g.content}</div>
+    </div>`).join('') : `<div class="card"><div style="font-size:12.5px; color:var(--muted);">No guidance entries yet.</div></div>`;
 }
 document.getElementById('kbSearch').oninput = e => renderKB(e.target.value);
 document.getElementById('kbSearchBtn').onclick = () => renderKB(document.getElementById('kbSearch').value);
-renderTagIndex();
-renderKB('');
-
-
+document.getElementById('addMaterialBtn').onclick = () => {
+  document.getElementById('addMaterialForm').innerHTML = `
+    <div class="card">
+      <input id="newKbQ" placeholder="Question" style="margin-bottom:8px;" />
+      <textarea id="newKbA" placeholder="Answer" style="min-height:50px; margin-bottom:8px;"></textarea>
+      <input id="newKbTags" placeholder="Hashtags, comma separated" style="margin-bottom:8px;" />
+      <button class="btn-primary tap" id="saveKbBtn" style="width:100%;">Save material</button>
+    </div>`;
+  document.getElementById('saveKbBtn').onclick = async () => {
+    const q = document.getElementById('newKbQ').value.trim();
+    const a = document.getElementById('newKbA').value.trim();
+    const tags = document.getElementById('newKbTags').value.split(',').map(s=>s.trim()).filter(Boolean);
+    if (!q) return;
+    const { data, error } = await sb.from('ngd_kb_items').insert({question:q, answer:a, tags, approved:true}).select().single();
+    if (error){ alert('Could not save: ' + error.message); return; }
+    KB_ITEMS.push({id:data.id, q:data.question, a:data.answer, tags:data.tags||[]});
+    document.getElementById('addMaterialForm').innerHTML = '';
+    renderTagIndex(); renderKB('');
+  };
+};
+if (isOwnerOrAdmin){
+  document.addEventListener('click', e => {
+    if (e.target.closest('#addGuidanceBtn')){
+      document.getElementById('addGuidanceForm').innerHTML = `
+        <div class="card">
+          <input id="newGTitle" placeholder="Title" style="margin-bottom:8px;" />
+          <textarea id="newGContent" placeholder="Guidance details" style="min-height:50px; margin-bottom:8px;"></textarea>
+          <button class="btn-primary tap" id="saveGBtn" style="width:100%;">Save guidance</button>
+        </div>`;
+      document.getElementById('saveGBtn').onclick = async () => {
+        const title = document.getElementById('newGTitle').value.trim();
+        const content = document.getElementById('newGContent').value.trim();
+        if (!title) return;
+        const { data, error } = await sb.from('ngd_guidance').insert({title, content}).select().single();
+        if (error){ alert('Could not save: ' + error.message); return; }
+        GUIDANCE_ITEMS.push({id:data.id, title:data.title, content:data.content});
+        document.getElementById('addGuidanceForm').innerHTML = '';
+        renderGuidance();
+      };
+    }
+  });
+}
 
 // ---------- CHIT-CHAT ----------
 pages.innerHTML += `
@@ -499,66 +595,57 @@ pages.innerHTML += `
   <div class="card">
     <div class="eyebrow" data-i18n="teamActivity">Team activity</div>
     <div class="title" data-i18n="chitchatTitle">Chit-chat</div>
-    <div style="font-size:11.5px; color:var(--muted); margin-top:4px;">Logins, likes, comments and tags all show up here. Only the owner can edit or remove entries.</div>
+    <div style="font-size:11.5px; color:var(--muted); margin-top:4px;">Only the owner can remove entries.</div>
   </div>
   <div class="card">
-    <textarea data-i18n-ph="sayToTeamPlaceholder" placeholder="Say something to the team..." style="min-height:50px;"></textarea>
-    <button class="btn-primary tap" style="margin-top:8px;" data-i18n="post">Post</button>
+    <textarea id="chitInput" data-i18n-ph="sayToTeamPlaceholder" placeholder="Say something to the team..." style="min-height:50px;"></textarea>
+    <button class="btn-primary tap" id="chitPostBtn" style="margin-top:8px;" data-i18n="post">Post</button>
   </div>
-  <div class="card">
-    <div class="row" style="justify-content:space-between;">
-      <div class="row"><div class="avatar" style="width:26px; height:26px; font-size:11px;">D</div><span style="font-size:12.5px;"><b>Amanda</b> logged in — 9:02 AM</span></div>
-      <span style="font-size:14px; color:var(--muted); cursor:pointer;">⋯</span>
-    </div>
-  </div>
-  <div class="card">
-    <div class="row" style="justify-content:space-between; margin-bottom:6px;">
-      <div class="row"><div class="avatar" style="width:26px; height:26px; font-size:11px;">R</div><span style="font-size:12.5px;"><b>Nayla</b> — Sep 06, 10:14 AM</span></div>
-      <span style="font-size:14px; color:var(--muted); cursor:pointer;" title="Owner can edit/delete">✎</span>
-    </div>
-    <div style="font-size:13px; margin-bottom:8px;">Quick question — is tomorrow's 1pm slot still open? 😊 <span class="tag">@Gisel</span></div>
-    <div class="row" style="gap:10px;">
-      <span style="font-size:11.5px; color:var(--muted);">❤️ 2</span>
-      <span style="font-size:11.5px; color:var(--muted);">💬 1 comment</span>
-    </div>
-    <div class="divider"></div>
-    <div class="row"><div class="avatar" style="width:22px; height:22px; font-size:10px;">G</div><span style="font-size:12px;"><b>Gisel:</b> yes it's open, go ahead and book it!</span></div>
-  </div>
-  <div class="card">
-    <div class="row"><div class="avatar" style="width:26px; height:26px; font-size:11px;">A</div><span style="font-size:12.5px;"><b>IG Admin</b> tagged <b>Sarah T.</b>'s booking as confirmed — Sep 06, 11:40 AM</span></div>
-  </div>
+  <div id="chitResults"></div>
 </div>`;
+let CHITCHAT_POSTS = []; // loaded from ngd_chitchat
+function renderChitchat(){
+  document.getElementById('chitResults').innerHTML = CHITCHAT_POSTS.length ? CHITCHAT_POSTS.map(p => `
+    <div class="card">
+      <div class="row" style="justify-content:space-between;">
+        <div class="row"><div class="avatar" style="width:26px; height:26px; font-size:11px;">${p.author[0]}</div><span style="font-size:12.5px;"><b>${p.author}</b> — ${new Date(p.created_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</span></div>
+        ${currentUser.role==='Owner' ? `<span class="tap" data-delchit="${p.id}" style="font-size:14px; color:var(--muted); cursor:pointer;" title="Delete">🗑️</span>` : ''}
+      </div>
+      <div style="font-size:13px; margin-top:6px;">${p.content}</div>
+    </div>`).join('') : `<div class="card"><div style="font-size:12.5px; color:var(--muted);">Nothing posted yet — say hi to the team above.</div></div>`;
+}
+document.getElementById('chitPostBtn').onclick = async () => {
+  const content = document.getElementById('chitInput').value.trim();
+  if (!content) return;
+  const { data, error } = await sb.from('ngd_chitchat').insert({author:currentUser.name, content}).select().single();
+  if (error){ alert('Could not post: ' + error.message); return; }
+  CHITCHAT_POSTS.unshift(data);
+  document.getElementById('chitInput').value = '';
+  renderChitchat();
+};
+document.addEventListener('click', async e => {
+  const del = e.target.closest('[data-delchit]');
+  if (del){
+    const id = del.dataset.delchit;
+    await sb.from('ngd_chitchat').delete().eq('id', id);
+    CHITCHAT_POSTS = CHITCHAT_POSTS.filter(p => p.id !== id);
+    renderChitchat();
+  }
+});
 
 // ---------- PRICING & REPORTS (owner/admin only) ----------
-const PRICING = {
-  owner: {label:'Owner', sections:[
-    {name:'Base', items:[
-      ['Manicure / Pedicure','100K'],['Basic Nail Gel (mani/pedi + 1 color)','150K'],['Basic Overlay Gel ★FAV','250K'],
-      ['BIAB 🆕','350K'],['Standard Extension','30K/finger'],['Premium Extension ★FAV 🆕','40K/finger'],
-      ['Fake Nails for Pedicure','10K/finger'],['Nail Repair 🆕','+15K/finger']]},
-    {name:'Remove', items:[['Remove Gel','75K'],['Remove Overlay/Extension','100–150K'],['Remove Acc/3D','10–15K/finger']]},
-    {name:'Callus Treatment — Kumi 🆕', items:[['Callus Treatment','300K'],['Callus Treatment + Nail Gel','400K'],['Callus Treatment + Nail Art (free 4 fake nails)','500K']]},
-    {name:'Press-On Nails', items:[['Regular Shape & Size','150K'],['Custom Shape & Size ★FAV','200K'],['Upgraded Glue & Tools','50K']]}
-  ]},
-  nayla: {label:'Nayla (senior)', sections:[
-    {name:'Base', items:[
-      ['Manicure / Pedicure','75K'],['Basic Nail Gel (mani/pedi + 1 color)','110K'],['Basic Overlay Gel ★FAV','175K'],
-      ['BIAB 🆕','200K'],['Standard Extension','22.5K/finger'],['Premium Extension ★FAV','30K/finger'],
-      ['Fake Nails for Pedicure','5K/finger'],['Nail Repair 🆕','5K/finger']]},
-    {name:'Remove', items:[['Remove Gel','50K'],['Remove Overlay/Extension','75–100K'],['Remove Acc/3D','5K/finger']]},
-    {name:'Callus Treatment — Kumi', items:[['Callus Treatment','250K'],['Callus Treatment + Nail Gel','350K'],['Callus Treatment + Nail Art','425K']]},
-    {name:'Press-On Nails', items:[['Regular Shape & Size','85K'],['Custom Shape & Size ★FAV','125K'],['Upgraded Glue & Tools','30K']]}
-  ]},
-  amanda: {label:'Amanda (junior)', sections:[
-    {name:'Base', items:[
-      ['Manicure / Pedicure','40K'],['Basic Nail Gel (mani/pedi + 1 color)','75K'],['Basic Overlay Gel','110K'],
-      ['BIAB','—'],['Standard Extension','12.5K/finger'],['Premium Extension','—'],
-      ['Fake Nails for Pedicure','5K/finger'],['Nail Repair','—']]},
-    {name:'Remove', items:[['Remove Gel','45K'],['Remove Overlay/Extension','60K'],['Remove Acc/3D','5K/finger']]},
-    {name:'Callus Treatment — Kumi', items:[['Callus Treatment','200K'],['Callus Treatment + Nail Gel','300K'],['Callus Treatment + Nail Art','350K']]},
-    {name:'Press-On Nails', items:[['Regular Shape & Size','70K'],['Custom Shape & Size','100K'],['Upgraded Glue & Tools','30K']]}
-  ]}
-};
+const PRICING_LABELS = {owner:'Owner', nayla:'Nayla (senior)', amanda:'Amanda (junior)'};
+let PRICING = {owner:{label:'Owner',sections:[]}, nayla:{label:'Nayla (senior)',sections:[]}, amanda:{label:'Amanda (junior)',sections:[]}};
+function buildPricingFromRows(rows){
+  const out = {owner:{label:'Owner',sections:[]}, nayla:{label:'Nayla (senior)',sections:[]}, amanda:{label:'Amanda (junior)',sections:[]}};
+  rows.forEach(r => {
+    if (!out[r.person]) return;
+    let sec = out[r.person].sections.find(s => s.name === r.section);
+    if (!sec){ sec = {name:r.section, items:[]}; out[r.person].sections.push(sec); }
+    sec.items.push({id:r.id, label:r.item, price:r.price});
+  });
+  return out;
+}
 pages.innerHTML += `
 <div class="pagesec section-hidden" id="page-pricing">
   <div class="card">
@@ -585,10 +672,10 @@ pages.innerHTML += `
   <div class="card">
     <div class="row" style="justify-content:space-between; margin-bottom:8px;">
       <div style="font-weight:600; font-size:13.5px;" data-i18n="customVouchers">🏷️ Custom vouchers</div>
-      <button class="btn-ghost tap" style="font-size:10.5px; padding:5px 10px;">+ Add (owner only)</button>
+      ${currentUser.role==='Owner' ? `<button class="btn-ghost tap" id="addVoucherBtn" style="font-size:10.5px; padding:5px 10px;">+ Add (owner only)</button>` : ''}
     </div>
-    <div class="row" style="justify-content:space-between; padding:6px 0; border-top:1px solid var(--hairline);"><span style="font-size:12.5px;">BIRTHDAY10 — 10% off, birthday month</span><span class="tag">Active</span></div>
-    <div class="row" style="justify-content:space-between; padding:6px 0; border-top:1px solid var(--hairline);"><span style="font-size:12.5px;">REFER50K — Rp50K off for referrals</span><span class="tag">Active</span></div>
+    <div id="voucherResults"></div>
+    <div id="addVoucherForm"></div>
   </div>
 
   <div class="card">
@@ -606,14 +693,20 @@ function renderPriceSheet(who){
       ${p.sections.map(sec => `
         <div style="margin-top:10px;">
           <div style="font-size:11px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:.02em; margin-bottom:4px;">${sec.name}</div>
-          ${sec.items.map(([label,price]) => `
+          ${sec.items.map(it => `
             <div class="row" style="justify-content:space-between; padding:5px 0; border-top:1px solid var(--hairline);">
-              <span style="font-size:12px;">${label}</span>
-              <input value="${price}" style="width:88px; text-align:right; font-size:12px; padding:5px 7px;" />
+              <span style="font-size:12px;">${it.label}</span>
+              <input data-priceid="${it.id}" value="${it.price}" style="width:88px; text-align:right; font-size:12px; padding:5px 7px;" />
             </div>`).join('')}
         </div>`).join('')}
-      <div style="font-size:10.5px; color:var(--muted); margin-top:10px;">Prices shown here are used automatically when logging a visit for ${p.label} — edit anytime, changes apply going forward only.</div>
+      <div style="font-size:10.5px; color:var(--muted); margin-top:10px;">Prices shown here are used automatically when logging a visit for ${p.label} — edit anytime, saves automatically when you tap away.</div>
     </div>`;
+  document.querySelectorAll('[data-priceid]').forEach(inp => {
+    inp.addEventListener('change', async () => {
+      const { error } = await sb.from('ngd_pricing').update({price:inp.value}).eq('id', inp.dataset.priceid);
+      if (error) alert('Could not save price: ' + error.message);
+    });
+  });
 }
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-pricewho]');
@@ -623,25 +716,66 @@ document.addEventListener('click', e => {
     renderPriceSheet(b.dataset.pricewho);
   }
 });
-renderPriceSheet('owner');
 
-const MONTHLY_SUMMARY = {
-  Nayla: {clients:14, hand:9, feet:3, pressOn:2, total:'3,240K'},
-  Amanda: {clients:9, hand:5, feet:2, pressOn:2, total:'1,510K'}
-};
-document.getElementById('monthlySummary').innerHTML = Object.entries(MONTHLY_SUMMARY).map(([name,s]) => `
-  <div style="padding:8px 0; border-top:1px solid var(--hairline);">
-    <div class="row" style="justify-content:space-between; margin-bottom:6px;">
-      <span style="font-weight:600; font-size:13px;">${name}</span>
-      <span class="tag">${s.clients} clients</span>
-    </div>
-    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
-      <span class="tag">💅 Hand: ${s.hand}</span>
-      <span class="tag">🦶 Feet/callus: ${s.feet}</span>
-      <span class="tag">✨ Press-on: ${s.pressOn}</span>
-    </div>
-    <div style="font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--accent);">Rp ${s.total} total this month</div>
-  </div>`).join('');
+let VOUCHERS = []; // loaded from ngd_vouchers
+function renderVouchers(){
+  document.getElementById('voucherResults').innerHTML = VOUCHERS.length ? VOUCHERS.map(v => `
+    <div class="row" style="justify-content:space-between; padding:6px 0; border-top:1px solid var(--hairline);"><span style="font-size:12.5px;">${v.code} — ${v.description}</span><span class="tag">${v.active?'Active':'Inactive'}</span></div>
+  `).join('') : `<div style="font-size:12px; color:var(--muted); padding:6px 0;">No vouchers yet.</div>`;
+}
+if (currentUser.role==='Owner'){
+  document.addEventListener('click', e => {
+    if (e.target.closest('#addVoucherBtn')){
+      document.getElementById('addVoucherForm').innerHTML = `
+        <div class="divider"></div>
+        <input id="newVCode" placeholder="Code (e.g. BIRTHDAY10)" style="margin-bottom:8px;" />
+        <input id="newVDesc" placeholder="Description" style="margin-bottom:8px;" />
+        <button class="btn-primary tap" id="saveVBtn" style="width:100%;">Save voucher</button>`;
+      document.getElementById('saveVBtn').onclick = async () => {
+        const code = document.getElementById('newVCode').value.trim();
+        const description = document.getElementById('newVDesc').value.trim();
+        if (!code) return;
+        const { data, error } = await sb.from('ngd_vouchers').insert({code, description, active:true}).select().single();
+        if (error){ alert('Could not save: ' + error.message); return; }
+        VOUCHERS.push(data);
+        document.getElementById('addVoucherForm').innerHTML = '';
+        renderVouchers();
+      };
+    }
+  });
+}
+
+function renderMonthlySummary(){
+  const now = new Date();
+  const summary = {};
+  Object.entries(CAL_BOOKINGS).forEach(([key, items]) => {
+    const [y,m] = key.split('-').map(Number);
+    if (y !== now.getFullYear() || m !== now.getMonth()) return;
+    items.forEach(b => {
+      if (!b.group) return;
+      const name = b.artist;
+      if (!summary[name]) summary[name] = {clients:0, hand:0, feet:0, pressOn:0};
+      summary[name].clients++;
+      const s = (b.service||'').toLowerCase();
+      if (s.includes('feet') || s.includes('pedicure') || s.includes('callus')) summary[name].feet++;
+      else if (s.includes('press')) summary[name].pressOn++;
+      else summary[name].hand++;
+    });
+  });
+  const entries = Object.entries(summary);
+  document.getElementById('monthlySummary').innerHTML = entries.length ? entries.map(([name,s]) => `
+    <div style="padding:8px 0; border-top:1px solid var(--hairline);">
+      <div class="row" style="justify-content:space-between; margin-bottom:6px;">
+        <span style="font-weight:600; font-size:13px;">${name}</span>
+        <span class="tag">${s.clients} bookings</span>
+      </div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <span class="tag">💅 Hand: ${s.hand}</span>
+        <span class="tag">🦶 Feet/callus: ${s.feet}</span>
+        <span class="tag">✨ Press-on: ${s.pressOn}</span>
+      </div>
+    </div>`).join('') : `<div style="font-size:12px; color:var(--muted);">No bookings logged yet this month.</div>`;
+}
 
 // ---------- TEAM ----------
 pages.innerHTML += `
@@ -697,7 +831,8 @@ pages.innerHTML += `
     <div style="font-weight:600; font-size:13.5px; margin-bottom:2px;" data-i18n="teamPageAccess">Team & page access</div>
     <div style="font-size:11.5px; color:var(--muted); margin-bottom:10px;">Tap a chip to cycle its access level for that page. Usernames and passwords are visible to you so you can help anyone who's locked out — tap 👁️ to reveal.</div>
     <div id="permMatrix"></div>
-    <button class="btn-primary tap" style="width:100%; margin-top:12px;">+ Add person</button>
+    <button class="btn-primary tap" id="addPersonBtn" style="width:100%; margin-top:12px;">+ Add person</button>
+    <div id="addPersonForm"></div>
   </div>
   <div class="card">
     <div style="font-weight:600; font-size:13.5px; margin-bottom:10px;" data-i18n="loginAccess">Login access</div>
@@ -750,14 +885,15 @@ function renderMatrix(){
         <input readonly value="${p.username}" style="font-size:11px; padding:6px 8px; flex:1;" />
         <input readonly type="${pwVisible[pi] ? 'text' : 'password'}" value="${p.password}" style="font-size:11px; padding:6px 8px; flex:1;" />
         <span class="tap" data-pwtoggle="${pi}" style="cursor:pointer; font-size:14px;">${pwVisible[pi] ? '🙈' : '👁️'}</span>
-        <button class="btn-ghost tap" style="font-size:10px; padding:6px 8px;">Reset</button>
+        <button class="btn-ghost tap" data-resetpw="${pi}" style="font-size:10px; padding:6px 8px;">Reset</button>
       </div>
     </div>`).join('');
   el.querySelectorAll('[data-person]').forEach(btn => {
-    btn.onclick = () => {
+    btn.onclick = async () => {
       const pi = +btn.dataset.person, pg = btn.dataset.page;
       people[pi].access[pg] = (people[pi].access[pg] + 1) % 3;
       renderMatrix();
+      await sb.from('ngd_staff').update({access: people[pi].access}).eq('id', people[pi].id);
     };
   });
   el.querySelectorAll('[data-pwtoggle]').forEach(btn => {
@@ -767,10 +903,91 @@ function renderMatrix(){
       renderMatrix();
     };
   });
+  el.querySelectorAll('[data-resetpw]').forEach(btn => {
+    btn.onclick = async () => {
+      const pi = +btn.dataset.resetpw;
+      const newPw = prompt(`New password for ${people[pi].name}:`, people[pi].password);
+      if (!newPw) return;
+      people[pi].password = newPw;
+      renderMatrix();
+      await sb.from('ngd_staff').update({password:newPw}).eq('id', people[pi].id);
+    };
+  });
 }
 renderMatrix();
 
+document.getElementById('addPersonBtn') && (document.getElementById('addPersonBtn').onclick = () => {
+  document.getElementById('addPersonForm').innerHTML = `
+    <div class="divider"></div>
+    <input id="newPName" placeholder="Name" style="margin-bottom:8px;" />
+    <input id="newPRole" placeholder="Role (e.g. Junior artist)" style="margin-bottom:8px;" />
+    <input id="newPUser" placeholder="Username" style="margin-bottom:8px;" />
+    <input id="newPPass" placeholder="Password" style="margin-bottom:8px;" />
+    <button class="btn-primary tap" id="savePersonBtn" style="width:100%;">Save person</button>`;
+  document.getElementById('savePersonBtn').onclick = async () => {
+    const name = document.getElementById('newPName').value.trim();
+    const role = document.getElementById('newPRole').value.trim();
+    const username = document.getElementById('newPUser').value.trim();
+    const password = document.getElementById('newPPass').value.trim();
+    if (!name || !role || !username || !password) return;
+    const access = {Clients:1, Bookings:2, Knowledge:1, 'Chit-chat':1};
+    const { data, error } = await sb.from('ngd_staff').insert({name, role, username, password, access}).select().single();
+    if (error){ alert('Could not add person: ' + error.message); return; }
+    people.push({id:data.id, name:data.name, role:data.role, locked:false, username:data.username, password:data.password, access:data.access});
+    document.getElementById('addPersonForm').innerHTML = '';
+    renderMatrix();
+  };
+});
+
 showPage('home');
+
+// ---------- LOAD ALL LIVE DATA FROM SUPABASE ----------
+(async function loadAllData(){
+  const [clientsRes, bookingsRes, kbRes, guidanceRes, chitRes, pricingRes, vouchersRes] = await Promise.all([
+    sb.from('ngd_clients').select('*').order('created_at'),
+    sb.from('ngd_bookings').select('*').order('booking_date'),
+    sb.from('ngd_kb_items').select('*').order('created_at'),
+    sb.from('ngd_guidance').select('*').order('created_at'),
+    sb.from('ngd_chitchat').select('*').order('created_at', {ascending:false}).limit(50),
+    sb.from('ngd_pricing').select('*').order('sort_order'),
+    sb.from('ngd_vouchers').select('*').order('created_at')
+  ]);
+
+  clients = (clientsRes.data||[]).map(mapClientRow);
+  renderClients('');
+
+  CAL_BOOKINGS = {};
+  (bookingsRes.data||[]).forEach(b => {
+    const d = new Date(b.booking_date + 'T00:00:00');
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    if (!CAL_BOOKINGS[key]) CAL_BOOKINGS[key] = [];
+    CAL_BOOKINGS[key].push({ id:b.id, client:b.client_name, artist:b.artist, time:b.booking_time, service:b.service, status:b.status, group:b.is_group, people:b.people||[] });
+  });
+  renderCalGrid(); showCalDay();
+
+  KB_ITEMS = (kbRes.data||[]).map(r => ({id:r.id, q:r.question, a:r.answer, tags:r.tags||[]}));
+  renderTagIndex(); renderKB('');
+
+  GUIDANCE_ITEMS = (guidanceRes.data||[]).map(r => ({id:r.id, title:r.title, content:r.content}));
+  renderGuidance();
+
+  CHITCHAT_POSTS = chitRes.data || [];
+  renderChitchat();
+
+  PRICING = buildPricingFromRows(pricingRes.data||[]);
+  renderPriceSheet('owner');
+
+  VOUCHERS = vouchersRes.data || [];
+  renderVouchers();
+
+  renderMonthlySummary();
+
+  const bdayEl = document.getElementById('homeBirthdays');
+  if (bdayEl){
+    const withBday = clients.filter(c => c.birthday && c.birthday !== '—');
+    bdayEl.innerHTML = withBday.length ? withBday.map(c => `🎂 ${c.name} — ${c.birthday}`).join('<br>') : 'No client birthdays saved yet.';
+  }
+})();
 
 // ---------- LANGUAGE TOGGLE (mockup demo) ----------
 const TRANSLATIONS = {
