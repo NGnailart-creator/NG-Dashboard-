@@ -214,7 +214,7 @@ function mapClientRow(r){
   return { id:r.id, name:r.name, birthday:r.birthday||'—', visits:r.visits||0, last:r.last_visit||'—', artist:r.artist||'—',
     pref:r.pref||[], rating:r.rating||5, note:r.note||'',
     sharedNote:r.shared_note || '', username:r.username||'', hasLogin:!!r.user_id, mustSetPin:!!r.must_set_pin, clientNote:r.client_note||'', birthdayRaw:r.birthday||'',
-    phone:r.phone||'', instagram:r.instagram||'', area:r.area||'', referral:r.referral||'', referralDetail:r.referral_detail||'', firstVisit:r.first_visit||'' };
+    sensitivity:r.sensitivity||'', phone:r.phone||'', instagram:r.instagram||'', area:r.area||'', referral:r.referral||'', referralDetail:r.referral_detail||'', firstVisit:r.first_visit||'' };
 }
 function clientCardHtml(c){
   return `
@@ -269,7 +269,7 @@ document.getElementById('loggedInAsLine').innerHTML = isOwnerOrAdmin
 function renderClients(filter){
   const f = (filter||'').toLowerCase().trim();
   const scoped = isOwnerOrAdmin ? clients : clients.filter(c => c.artist.startsWith(currentUser.name));
-  const results = scoped.filter(c => !f || (c.name+' '+c.pref.join(' ')+' '+c.note+' '+c.sharedNote+' '+c.artist+' '+(c.instagram||'')+' '+(c.area||'')+' '+(c.phone||'')+' '+(c.username||'')).toLowerCase().includes(f));
+  const results = scoped.filter(c => !f || (c.name+' '+c.pref.join(' ')+' '+c.note+' '+c.sharedNote+' '+c.artist+' '+(c.instagram||'')+' '+(c.area||'')+' '+(c.phone||'')+' '+(c.username||'')+' '+(c.sensitivity||'')).toLowerCase().includes(f));
   document.getElementById('clientResults').innerHTML = results.length ? results.map(clientCardHtml).join('') : `<div class="card"><div style="font-size:12.5px; color:var(--muted);">No clients yet — add your first one below.</div></div>`;
 }
 document.getElementById('clientSearch').oninput = e => renderClients(e.target.value);
@@ -283,6 +283,8 @@ function clientFormFields(c){
       <input id="cfPhone" placeholder="WhatsApp number" inputmode="tel" value="${v('phone')}" />
       <input id="cfIg" placeholder="Instagram (e.g. @sarah.nails)" value="${v('instagram')}" autocapitalize="none" />
       <input id="cfArea" placeholder="Area they live in (e.g. Lembang, Setiabudi)" value="${v('area')}" />
+      <label style="font-size:10.5px; color:var(--muted);">⚠️ Allergies / sensitivities (team only — e.g. allergic to a gel brand, sensitive skin, avoid drill near cuticle)</label>
+      <textarea id="cfSens" placeholder="Leave empty if none" style="min-height:40px;">${v('sensitivity')}</textarea>
       <label style="font-size:10.5px; color:var(--muted);">Birthday (for automatic birthday messages)</label>
       <input id="cfBday" type="date" value="${/^\d{4}-\d{2}-\d{2}$/.test(c.birthdayRaw||'') ? c.birthdayRaw : ''}" />
       <label style="font-size:10.5px; color:var(--muted);">How did they find us?</label>
@@ -298,7 +300,7 @@ function clientFormFields(c){
 function readClientForm(){
   const g = id => document.getElementById(id).value.trim();
   return { name: g('cfName'), phone: g('cfPhone') || null, instagram: g('cfIg') || null, area: g('cfArea') || null,
-    birthday: g('cfBday'), referral: g('cfRef') || null, referral_detail: g('cfRefDetail') || null,
+    birthday: g('cfBday'), sensitivity: g('cfSens') || null, referral: g('cfRef') || null, referral_detail: g('cfRefDetail') || null,
     visits: Math.max(0, parseInt(g('cfVisits')) || 0), first_visit: g('cfFirst') || null, artist: g('cfArtist'),
     pref: g('cfPref').split(',').map(x => x.trim()).filter(Boolean) };
 }
@@ -1110,6 +1112,7 @@ function clientExtrasHtml(c){
   const nameOf = id => (people.find(p => p.id === id) || {}).name || 'Someone';
   return `
     <div class="divider"></div>
+    ${c.sensitivity ? `<div style="font-size:12px; background:#FBE9E7; color:#8A2D1F; border-radius:10px; padding:8px 10px; margin-bottom:8px;"><b>⚠️ Allergy / sensitivity:</b> ${esc(c.sensitivity)}</div>` : ''}
     <div style="font-size:11.5px; line-height:1.7; margin-bottom:8px;">
       ${c.phone ? `📱 ${esc(c.phone)}<br>` : ''}${c.instagram ? `📷 ${esc(c.instagram)}<br>` : ''}${c.area ? `📍 ${esc(c.area)}<br>` : ''}${c.referral ? `🔎 Found us via ${esc(c.referral)}${c.referralDetail ? ' — ' + esc(c.referralDetail) : ''}<br>` : ''}${c.firstVisit ? `🗓 First visit ${esc(c.firstVisit)}` : ''}
     </div>
@@ -1324,7 +1327,7 @@ function openTreatmentForm(clientId){
       const c = clients.find(x => x.id === cid);
       const nextVisit = (c ? c.visits : 0) + 1;
       const cycle = ((nextVisit - 1) % 10) + 1;
-      document.getElementById('tfLoyalty').innerHTML = `This will be visit <b>${nextVisit}</b> (stamp ${cycle} of 10).` + (LOYALTY[cycle] ? ` 🎁 <b>${LOYALTY[cycle].replace(/visit \d+/, 'stamp ' + cycle)}</b> — put it in the discount fields.` : '');
+      document.getElementById('tfLoyalty').innerHTML = (c && c.sensitivity ? `<div style="background:#FBE9E7; color:#8A2D1F; border-radius:10px; padding:8px 10px; margin-bottom:6px;"><b>⚠️ Allergy / sensitivity:</b> ${esc(c.sensitivity)}</div>` : '') + `This will be visit <b>${nextVisit}</b> (stamp ${cycle} of 10).` + (LOYALTY[cycle] ? ` 🎁 <b>${LOYALTY[cycle].replace(/visit \d+/, 'stamp ' + cycle)}</b> — put it in the discount fields.` : '');
     }
     window._tfSheet = sheet;
     document.getElementById('tfItemsList').innerHTML =
