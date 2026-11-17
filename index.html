@@ -1915,6 +1915,11 @@ calPage.firstElementChild.insertAdjacentHTML('afterend', `
       <span><b style="font-weight:600; color:var(--text);">08.00</b> open</span><span style="text-decoration:line-through;">08.00</span> closed<span><span style="background:var(--text); color:var(--bg); border-radius:4px; padding:0 4px; text-decoration:line-through;">08.00</span> booked</span>
     </div>
     <div id="bkMonth" style="margin-top:6px;"></div>
+    <div class="row" style="gap:6px; margin-top:8px;">
+      <button class="btn-ghost tap" id="bkCloseMonth" style="flex:1; font-size:11px;">🚫 Close all this month</button>
+      <button class="btn-ghost tap" id="bkOpenMonth" style="flex:1; font-size:11px;">↺ Reopen usual times</button>
+    </div>
+    <div style="font-size:10px; color:var(--muted); margin-top:4px;">Use ⊘ on a row to close the whole day. Times that already have a booking stay as they are.</div>
     <div class="divider"></div>
     <div style="font-size:11px; font-weight:600;">Open a time on another day</div>
     <div class="row" style="gap:6px; margin-top:6px;"><input id="bkExtraDate" type="date" style="flex:1.3; min-width:0;" /><input id="bkExtraTime" type="time" step="900" style="flex:1; min-width:0;" /><button class="btn-ghost tap" id="bkExtraBtn" style="font-size:11px; flex:none;">Open</button></div>
@@ -1985,7 +1990,7 @@ async function renderBkMonth(){
         const t = sl.time.replace(':','.');
         if (sl.booked) return `<span title="${esc(sl.booked.client||'')} ${sl.booked.start}–${sl.booked.end}" style="background:var(--text); color:var(--bg); border-radius:8px; padding:5px 7px; font-size:11.5px; text-decoration:line-through; line-height:1.1; text-align:center;">${t}<br><span style="font-size:8px; text-decoration:none; display:inline-block;">${esc((sl.booked.client||'booked').split(' ')[0])}</span></span>`;
         return `<button class="tap" ${past ? 'disabled' : ''} data-bkslot="${sl.time}" data-date="${d.date}" data-open="${sl.open ? 1 : 0}" style="border:1px solid ${sl.open ? 'var(--text)' : 'var(--hairline)'}; background:transparent; color:${sl.open ? 'var(--text)' : 'var(--muted)'}; border-radius:8px; padding:6px 8px; font-size:12px; font-weight:${sl.open ? 600 : 400}; text-decoration:${sl.open ? 'none' : 'line-through'}; cursor:pointer;">${t}${sl.default ? '' : '<sup style="font-size:7px;"> +</sup>'}</button>`; }).join('')}</div>
-      ${past ? '' : `<span class="tap" data-bkadd="${d.date}" title="Open another time" style="cursor:pointer; color:var(--muted); font-size:16px; padding:0 4px;">＋</span>`}</div>`; }).join('') + '</div>'
+      ${past ? '' : `<span style="display:flex; flex-direction:column; align-items:center; gap:2px; flex:none;"><span class="tap" data-bkadd="${d.date}" title="Open another time" style="cursor:pointer; color:var(--muted); font-size:15px; line-height:1; padding:0 4px;">＋</span><span class="tap" data-bkcloseday="${d.date}" title="Close the whole day" style="cursor:pointer; color:var(--muted); font-size:14px; line-height:1; padding:0 4px;">⊘</span></span>`}</div>`; }).join('') + '</div>'
     : '<div style="font-size:11.5px; color:var(--muted);">No booking days this month.</div>';
 }
 function bookAddFormHtml(){
@@ -2004,6 +2009,14 @@ function bookAddFormHtml(){
 document.getElementById('bkSchArtist').onchange = () => { renderBkMonth(); document.getElementById('bkAddForm').innerHTML = ''; };
 document.getElementById('bkMPrev').onclick = () => { BK_MONTH.m--; if (BK_MONTH.m < 0){ BK_MONTH.m = 11; BK_MONTH.y--; } renderBkMonth(); };
 document.getElementById('bkMNext').onclick = () => { BK_MONTH.m++; if (BK_MONTH.m > 11){ BK_MONTH.m = 0; BK_MONTH.y++; } renderBkMonth(); };
+async function bkBulk(from, to, open){
+  const who = bkArtistName(), span = from === to ? dayLabel(from) : `all of ${MONTH_NAMES[BK_MONTH.m]} ${BK_MONTH.y} (from today)`;
+  if (!confirm(open ? `Reopen the usual times for ${who} on ${span}?\nClients will be able to book them again.` : `Close ALL open times for ${who} on ${span}?\nClients can no longer book these times. Existing bookings stay.`)) return;
+  const { data, error } = await sb.rpc('ngd_set_slots_bulk', { p_artist: document.getElementById('bkSchArtist').value, p_from: from, p_to: to, p_open: open });
+  if (error) return alert(error.message);
+  if (!data) alert(open ? 'Nothing to reopen.' : 'Nothing to close — no open times.');
+  renderBkMonth();
+}
 async function bkToggle(date, time, open){
   const who = bkArtistName(), when = `${dayLabel(date)} ${time.replace(':','.')}`;
   if (!confirm(open ? `Open ${when} for ${who}?\nClients will be able to book this time.` : `Close ${when} for ${who}?\nClients can no longer book this time.`)) return;
@@ -2014,6 +2027,12 @@ async function bkToggle(date, time, open){
 document.addEventListener('click', async e => {
   const sl = e.target.closest('[data-bkslot]');
   if (sl) return bkToggle(sl.dataset.date, sl.dataset.bkslot, sl.dataset.open !== '1');
+  const cd = e.target.closest('[data-bkcloseday]');
+  if (cd) return bkBulk(cd.dataset.bkcloseday, cd.dataset.bkcloseday, false);
+  if (e.target.id === 'bkCloseMonth' || e.target.id === 'bkOpenMonth'){
+    const from = `${BK_MONTH.y}-${String(BK_MONTH.m+1).padStart(2,'0')}-01`, last = new Date(BK_MONTH.y, BK_MONTH.m+1, 0).getDate();
+    return bkBulk(from, `${BK_MONTH.y}-${String(BK_MONTH.m+1).padStart(2,'0')}-${last}`, e.target.id === 'bkOpenMonth');
+  }
   const ad = e.target.closest('[data-bkadd]');
   if (ad){ const t = prompt(`Open another time on ${dayLabel(ad.dataset.bkadd)} for ${bkArtistName()} (e.g. 12:30):`); if (!t) return;
     const m = t.trim().replace('.',':').match(/^(\d{1,2}):(\d{2})$/); if (!m) return alert('Use the format 12:30');
