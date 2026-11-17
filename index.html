@@ -5,43 +5,43 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
 <title>NG Nail Art Dashboard</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&display=swap');
   * { box-sizing: border-box; }
   html,body{height:100%;margin:0;}
   ::-webkit-scrollbar{display:none;}
   body{
-    --bg:#FCEEF3; --surface:#FFFFFF; --text:#2A1620; --muted:#8C6B78;
-    --accent:#D9527A; --onAccent:#FFFFFF; --tint:#FBDCE5; --hairline:#F2C9D6;
-    background:var(--bg); font-family:Inter,sans-serif; color:var(--text);
+    --bg:#FFF7EF; --surface:#FFFFFF; --text:#111111; --muted:#6F6A66;
+    --accent:#111111; --onAccent:#FFF7EF; --tint:#F6ECE2; --hairline:#E9E0D6;
+    background:var(--bg); font-family:Montserrat,sans-serif; font-weight:300; letter-spacing:.02em; color:var(--text);
   }
   .tap{transition:transform .12s ease, opacity .12s ease;}
   .tap:active{transform:scale(.96); opacity:.85;}
-  .card{background:var(--surface); border-radius:16px; padding:16px; box-shadow:0 1px 2px rgba(42,22,32,0.06); margin-bottom:12px;}
-  .eyebrow{font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--accent); text-transform:uppercase; letter-spacing:.02em;}
-  .title{font-family:'Fraunces',serif; font-size:19px; font-weight:600; color:var(--text); margin-top:2px;}
-  .pill{padding:6px 12px; border-radius:999px; font-family:Inter,sans-serif; font-size:11.5px; font-weight:600; cursor:pointer; border:1px solid var(--hairline); background:transparent; color:var(--text);}
+  .card{background:var(--surface); border-radius:18px; padding:18px; border:1px solid var(--hairline); margin-bottom:12px;}
+  .eyebrow{font-family:Montserrat,sans-serif; font-size:9.5px; font-weight:500; color:var(--muted); text-transform:uppercase; letter-spacing:.28em;}
+  .title{font-family:Montserrat,sans-serif; font-size:15px; font-weight:400; color:var(--text); margin-top:6px; text-transform:uppercase; letter-spacing:.22em;}
+  .pill{padding:6px 12px; border-radius:999px; font-family:Montserrat,sans-serif; font-size:11.5px; font-weight:600; cursor:pointer; border:1px solid var(--hairline); background:transparent; color:var(--text);}
   .pill.active{background:var(--accent); color:var(--onAccent); border-color:var(--accent);}
   .stat{flex:1; text-align:center; background:var(--tint); border-radius:12px; padding:10px 6px;}
-  .stat .num{font-family:'JetBrains Mono',monospace; font-size:16px; font-weight:700; color:var(--accent);}
-  .stat .label{font-family:Inter,sans-serif; font-size:10px; color:var(--muted); margin-top:2px;}
+  .stat .num{font-family:Montserrat,sans-serif; font-size:16px; font-weight:700; color:var(--accent);}
+  .stat .label{font-family:Montserrat,sans-serif; font-size:10px; color:var(--muted); margin-top:2px;}
   .toggle{width:38px; height:22px; border-radius:999px; background:var(--hairline); position:relative; cursor:pointer; flex-shrink:0;}
   .toggle.on{background:var(--accent);}
   .toggle .knob{position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; transition:left .15s ease;}
   .toggle.on .knob{left:18px;}
-  .tag{font-family:'JetBrains Mono',monospace; font-size:10px; padding:3px 9px; border-radius:999px; background:var(--tint); color:var(--accent);}
+  .tag{font-family:Montserrat,sans-serif; font-size:9.5px; letter-spacing:.08em; padding:3px 9px; border-radius:999px; background:var(--tint); color:var(--text);}
   .topnav{position:sticky; top:0; z-index:10; background:var(--bg); border-bottom:1px solid var(--hairline); padding:10px 16px; display:flex; gap:6px; overflow-x:auto;}
-  .navbtn{display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 10px; border-radius:12px; font-family:Inter,sans-serif; font-size:10px; color:var(--muted); background:none; border:none; cursor:pointer; white-space:nowrap;}
+  .navbtn{display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 10px; border-radius:12px; font-family:Montserrat,sans-serif; font-size:10px; color:var(--muted); background:none; border:none; cursor:pointer; white-space:nowrap;}
   .navbtn.active{color:var(--accent); background:var(--tint);}
   .page{max-width:420px; margin:0 auto; padding:12px 16px 40px;}
   .section-hidden{display:none;}
-  .avatar{width:40px; height:40px; border-radius:50%; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; font-family:'Fraunces',serif; font-weight:600; font-size:15px; flex-shrink:0;}
+  .avatar{width:40px; height:40px; border-radius:50%; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; font-family:Montserrat,sans-serif; font-weight:600; font-size:15px; flex-shrink:0;}
   .row{display:flex; align-items:center; gap:10px;}
-  .btn-primary{background:var(--accent); color:var(--onAccent); border:none; border-radius:10px; padding:9px 14px; font-family:Inter,sans-serif; font-weight:600; font-size:12.5px; cursor:pointer;}
-  .btn-ghost{background:transparent; border:1px solid var(--hairline); border-radius:10px; padding:9px 14px; font-family:Inter,sans-serif; font-weight:600; font-size:12.5px; cursor:pointer; color:var(--text);}
+  .btn-primary{background:var(--accent); color:var(--onAccent); border:none; border-radius:10px; padding:9px 14px; font-family:Montserrat,sans-serif; font-weight:600; font-size:12.5px; cursor:pointer;}
+  .btn-ghost{background:transparent; border:1px solid var(--hairline); border-radius:10px; padding:9px 14px; font-family:Montserrat,sans-serif; font-weight:600; font-size:12.5px; cursor:pointer; color:var(--text);}
   .themeRow{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
   .swatch{width:26px; height:26px; border-radius:50%; cursor:pointer; border:2px solid transparent;}
   .swatch.active{border-color:var(--text);}
-  input,textarea,select{width:100%; font-family:Inter,sans-serif; font-size:13px; padding:9px 11px; border-radius:10px; border:1px solid var(--hairline); background:var(--surface); color:var(--text);}
+  input,textarea,select{width:100%; font-family:Montserrat,sans-serif; font-size:13px; padding:9px 11px; border-radius:10px; border:1px solid var(--hairline); background:var(--surface); color:var(--text);}
   .divider{height:1px; background:var(--hairline); margin:10px 0;}
   #loginScreen{min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;}
   .loginCard{max-width:340px; width:100%; background:var(--surface); border-radius:20px; padding:28px 22px; box-shadow:0 4px 16px rgba(42,22,32,0.1);}
@@ -53,7 +53,7 @@
 
 <div id="loginScreen">
   <div class="loginCard">
-    <div style="font-family:'Fraunces',serif; font-size:22px; font-weight:600; text-align:center; margin-bottom:4px;">Natasya Gishelle</div>
+    <div style="font-family:Montserrat,sans-serif; font-size:18px; font-weight:300; letter-spacing:.35em; text-transform:uppercase; text-align:center; margin-bottom:6px;">NG Nailart</div>
     <div style="text-align:center; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:22px;">Nail Art Dashboard</div>
     <div style="display:grid; gap:10px;">
       <input id="loginUser" placeholder="Username" autocomplete="username" />
@@ -132,6 +132,7 @@ sb.auth.getSession().then(({ data }) => { if (data.session) enterApp(); });
 function initApp(){
 const PAGES_FOR_MATRIX = ['Clients','Bookings','Knowledge','Chit-chat'];
 const THEMES = {
+  ng:     {bg:'#FFF7EF', tint:'#F6ECE2', hairline:'#E9E0D6', accent:'#111111', text:'#111111', muted:'#6F6A66'},
   pink:   {bg:'#FCEEF3', tint:'#FBDCE5', hairline:'#F2C9D6', accent:'#D9527A', text:'#2A1620', muted:'#8C6B78'},
   none:   {bg:'#FBF8F3', tint:'#F3EAD6', hairline:'#E9DCC0', accent:'#E8A33D', text:'#3A2F1B', muted:'#8C8367'},
   blue:   {bg:'#EDF6FB', tint:'#D6ECF5', hairline:'#C3DFEC', accent:'#2E7FA6', text:'#111E29', muted:'#66808F'},
@@ -141,9 +142,10 @@ const THEMES = {
 };
 function applyTheme(name){
   const th = THEMES[name];
-  Object.entries({'--bg':th.bg,'--tint':th.tint,'--hairline':th.hairline,'--accent':th.accent,'--text':th.text,'--muted':th.muted})
+  Object.entries({'--bg':th.bg,'--tint':th.tint,'--hairline':th.hairline,'--accent':th.accent,'--text':th.text,'--muted':th.muted,'--onAccent':name==='ng'?'#FFF7EF':'#FFFFFF'})
     .forEach(([k,v]) => document.body.style.setProperty(k,v));
   document.querySelectorAll('.swatch').forEach(s => s.classList.toggle('active', s.dataset.theme===name));
+  try{ localStorage.setItem('ngd-theme', name); }catch(_){}
 }
 
 const TABS = [
@@ -213,7 +215,7 @@ function clientCardHtml(c){
     <div class="row">
       <div class="avatar">${c.name[0]}</div>
       <div style="flex:1">
-        <div style="font-family:'Fraunces',serif; font-weight:600; font-size:15.5px;">${c.name}</div>
+        <div style="font-family:Montserrat,sans-serif; font-weight:600; font-size:15.5px;">${c.name}</div>
         <div style="font-size:11.5px; color:var(--muted);">Last visit ${c.last} · with ${c.artist}</div>
       </div>
       <div class="tag">${c.visits} visits</div>
@@ -224,7 +226,7 @@ function clientCardHtml(c){
     </div>
     <div style="font-size:12.5px; color:var(--text); line-height:1.5;">${c.note}</div>
     <div class="row" style="margin-top:10px; justify-content:space-between;">
-      <div style="font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--accent);">${'★'.repeat(c.rating)}${'☆'.repeat(5-c.rating)}</div>
+      <div style="font-family:Montserrat,sans-serif; font-size:12px; color:var(--accent);">${'★'.repeat(c.rating)}${'☆'.repeat(5-c.rating)}</div>
       <button class="btn-ghost tap" style="font-size:11px; padding:6px 10px;">View visit history</button>
     </div>
     <div style="font-size:10.5px; color:var(--muted); margin-top:8px;">🎂 ${c.birthday} · visits logged only by owner/admin</div>
@@ -326,10 +328,10 @@ pages.innerHTML += `
   <div class="card" style="background:linear-gradient(160deg, var(--tint) 0%, var(--surface) 140%);">
     <div class="row" style="justify-content:space-between; margin-bottom:10px;">
       <span class="tap" id="calPrev" style="cursor:pointer; color:var(--accent); font-size:18px; padding:4px 8px;">‹</span>
-      <div id="calMonthLabel" style="font-family:'Fraunces',serif; font-size:16px; font-weight:600;">🗓️ September 2026</div>
+      <div id="calMonthLabel" style="font-family:Montserrat,sans-serif; font-size:16px; font-weight:600;">🗓️ September 2026</div>
       <span class="tap" id="calNext" style="cursor:pointer; color:var(--accent); font-size:18px; padding:4px 8px;">›</span>
     </div>
-    <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:5px; text-align:center; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); margin-bottom:6px;">
+    <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:5px; text-align:center; font-family:Montserrat,sans-serif; font-size:10px; color:var(--muted); margin-bottom:6px;">
       <div>S</div><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div>
     </div>
     <div id="calGrid" style="display:grid; grid-template-columns:repeat(7,1fr); gap:5px;"></div>
@@ -370,7 +372,7 @@ function renderCalGrid(){
   for (let d=1; d<=daysInMonth; d++){
     const has = (CAL_BOOKINGS[keyFor(d)]||[]).some(matchesFilter);
     const isSelected = d===selectedDay;
-    cells += `<div class="tap calday" data-day="${d}" style="aspect-ratio:1; min-height:34px; display:flex; align-items:center; justify-content:center; border-radius:8px; font-family:'JetBrains Mono',monospace; font-size:11px; cursor:pointer; ${isSelected?'background:var(--accent); color:#fff;':has?'background:var(--tint); color:var(--text);':'color:var(--text);'}">${d}</div>`;
+    cells += `<div class="tap calday" data-day="${d}" style="aspect-ratio:1; min-height:34px; display:flex; align-items:center; justify-content:center; border-radius:8px; font-family:Montserrat,sans-serif; font-size:11px; cursor:pointer; ${isSelected?'background:var(--accent); color:#fff;':has?'background:var(--tint); color:var(--text);':'color:var(--text);'}">${d}</div>`;
   }
   grid.innerHTML = cells;
 }
@@ -854,12 +856,13 @@ pages.innerHTML += `
 const themeRow = document.getElementById('themeRow');
 Object.entries(THEMES).forEach(([name, th]) => {
   const s = document.createElement('div');
-  s.className = 'swatch tap' + (name==='pink' ? ' active' : '');
+  s.className = 'swatch tap' + (name==='ng' ? ' active' : '');
   s.dataset.theme = name;
   s.style.background = th.accent;
   s.onclick = () => applyTheme(name);
   themeRow.appendChild(s);
 });
+try{ const saved = localStorage.getItem('ngd-theme'); if (saved && THEMES[saved]) applyTheme(saved); }catch(_){}
 
 // toggle interactivity (mockup only)
 document.addEventListener('click', e => {
