@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
 <title>NG Nail Art Dashboard</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Gilda+Display&display=swap');
   * { box-sizing: border-box; }
   html,body{height:100%;margin:0;}
   ::-webkit-scrollbar{display:none;}
@@ -1915,6 +1915,7 @@ calPage.firstElementChild.insertAdjacentHTML('afterend', `
       <span><b style="font-weight:600; color:var(--text);">08.00</b> open</span><span style="text-decoration:line-through;">08.00</span> closed<span><span style="background:var(--text); color:var(--bg); border-radius:4px; padding:0 4px; text-decoration:line-through;">08.00</span> booked</span>
     </div>
     <div id="bkMonth" style="margin-top:6px;"></div>
+    <button class="btn-primary tap" id="bkIgBtn" style="width:100%; margin-top:10px;">⬇ Download schedule for Instagram</button>
     <div class="row" style="gap:6px; margin-top:8px;">
       <button class="btn-ghost tap" id="bkCloseMonth" style="flex:1; font-size:11px;">🚫 Close all this month</button>
       <button class="btn-ghost tap" id="bkOpenMonth" style="flex:1; font-size:11px;">↺ Reopen usual times</button>
@@ -2009,6 +2010,44 @@ function bookAddFormHtml(){
 document.getElementById('bkSchArtist').onchange = () => { renderBkMonth(); document.getElementById('bkAddForm').innerHTML = ''; };
 document.getElementById('bkMPrev').onclick = () => { BK_MONTH.m--; if (BK_MONTH.m < 0){ BK_MONTH.m = 11; BK_MONTH.y--; } renderBkMonth(); };
 document.getElementById('bkMNext').onclick = () => { BK_MONTH.m++; if (BK_MONTH.m > 11){ BK_MONTH.m = 0; BK_MONTH.y++; } renderBkMonth(); };
+async function bkInstagram(){
+  const artist = people.find(p => p.id === document.getElementById('bkSchArtist').value); if (!artist) return;
+  const first = `${BK_MONTH.y}-${String(BK_MONTH.m+1).padStart(2,'0')}-01`;
+  const { data, error } = await sb.rpc('ngd_team_month', { p_artist: artist.id, p_month: first });
+  if (error) return alert(error.message);
+  const days = (data||[]).filter(d => (d.slots||[]).length);
+  if (!days.length) return alert('No schedule this month yet.');
+  try { await document.fonts.load('60px "Gilda Display"'); } catch(_) {}
+  const W = 1080, H = 1920, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
+  const F = n => `${n}px "Gilda Display", Georgia, serif`;
+  const spaced = (txt, x, y, size, gap) => { g.font = F(size); const w = [...txt].reduce((t,ch) => t + g.measureText(ch).width + gap, -gap); let cx = x - w/2; g.textAlign = 'left'; for (const ch of txt){ g.fillText(ch, cx, y); cx += g.measureText(ch).width + gap; } };
+  g.fillStyle = '#EDE1D8'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#141414'; g.textBaseline = 'alphabetic';
+  spaced(`${MONTH_NAMES[BK_MONTH.m]} ${BK_MONTH.y}`, W/2, 178, 64, 26);
+  const isOwner = artist.role === 'Owner';
+  spaced(isOwner ? 'By NG' : `By Team-${artist.name}`, W/2, 252, 34, 11);
+  spaced(isOwner ? '(Owner)' : artist.role === 'Senior artist' ? '(Senior nail artist)' : '(Junior nail artist)', W/2, 290, 34, 11);
+  const cx0 = 118, cy0 = 335, cw = 844, chh = 1515, r = 60;
+  g.fillStyle = '#FAF8F6'; g.beginPath(); g.moveTo(cx0+r, cy0); g.arcTo(cx0+cw, cy0, cx0+cw, cy0+chh, r); g.arcTo(cx0+cw, cy0+chh, cx0, cy0+chh, r); g.arcTo(cx0, cy0+chh, cx0, cy0, r); g.arcTo(cx0, cy0, cx0+cw, cy0, r); g.closePath(); g.fill();
+  const cols = Math.max(...days.map(d => d.slots.length)), top = cy0 + 70, bottom = cy0 + chh - 70;
+  const rowH = Math.min(86, (bottom - top) / days.length), size = Math.max(22, Math.min(34, rowH * 0.42, cols > 3 ? 34 - (cols-3)*4 : 34));
+  const dateX = 205, colL = 290, colR = 900, colW = (colR - colL) / cols;
+  g.fillStyle = '#141414';
+  days.forEach((d, i) => {
+    const y = top + rowH * i + rowH * 0.55;
+    g.textAlign = 'center'; g.font = F(size); g.fillText(String(new Date(d.date + 'T00:00:00').getDate()), dateX, y);
+    d.slots.forEach((sl, k) => {
+      const x = colL + colW * k + colW/2, t = sl.time.replace(':','.');
+      g.fillText(t, x, y);
+      if (!sl.open || sl.booked){ const w = Math.min(colW - 14, g.measureText(t).width + 48); g.fillRect(x - w/2, y - size*0.33, w, 4); }
+    });
+  });
+  const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
+  const name = `Jadwal_${isOwner ? 'NG' : artist.name}_${MONTH_NAMES[BK_MONTH.m]}_${BK_MONTH.y}.png`;
+  const file = new File([blob], name, { type: 'image/png' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })){ try { await navigator.share({ files: [file] }); return; } catch(e){ if (e.name === 'AbortError') return; } }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+}
 async function bkBulk(from, to, open){
   const who = bkArtistName(), span = from === to ? dayLabel(from) : `all of ${MONTH_NAMES[BK_MONTH.m]} ${BK_MONTH.y} (from today)`;
   if (!confirm(open ? `Reopen the usual times for ${who} on ${span}?\nClients will be able to book them again.` : `Close ALL open times for ${who} on ${span}?\nClients can no longer book these times. Existing bookings stay.`)) return;
@@ -2027,6 +2066,7 @@ async function bkToggle(date, time, open){
 document.addEventListener('click', async e => {
   const sl = e.target.closest('[data-bkslot]');
   if (sl) return bkToggle(sl.dataset.date, sl.dataset.bkslot, sl.dataset.open !== '1');
+  if (e.target.id === 'bkIgBtn'){ e.target.disabled = true; try { await bkInstagram(); } finally { e.target.disabled = false; } return; }
   const cd = e.target.closest('[data-bkcloseday]');
   if (cd) return bkBulk(cd.dataset.bkcloseday, cd.dataset.bkcloseday, false);
   if (e.target.id === 'bkCloseMonth' || e.target.id === 'bkOpenMonth'){
@@ -2095,7 +2135,7 @@ if (document.getElementById('page-website')){
     <div style="display:grid; gap:8px; margin-top:10px;">
       <label style="font-size:10.5px; color:var(--muted);">Booking open until</label><input id="bkOpenUntil" type="date" />
       <div class="row" style="gap:6px;"><div style="flex:1;"><label style="font-size:10.5px; color:var(--muted);">DP owner</label><input id="bkDpOwner" type="number" /></div><div style="flex:1;"><label style="font-size:10.5px; color:var(--muted);">DP senior</label><input id="bkDpSenior" type="number" /></div><div style="flex:1;"><label style="font-size:10.5px; color:var(--muted);">DP junior</label><input id="bkDpJunior" type="number" /></div></div>
-      <div style="font-size:10.5px; color:var(--muted); margin-top:4px;">Usual times per nail artist, Tuesday–Friday (comma separated). The monthly schedule starts from these; open or close single times there.</div>
+      <div style="font-size:10.5px; color:var(--muted); margin-top:4px;">Usual times (comma separated) and working days per nail artist. The monthly schedule starts from these; open or close single times there.</div>
       <div id="bkArtistSlots"></div>
       <div style="font-size:10.5px; color:var(--muted); margin-top:4px;">Per service: duration in minutes, and below it the price estimate in thousands (e.g. 175-225) shown to clients — columns Owner / Senior / Junior. Empty duration = not offered with that level.</div>
       <div id="bkSvcTable"></div>
@@ -2104,7 +2144,10 @@ if (document.getElementById('page-website')){
   (async () => {
     await loadBookCfg(); const c = BOOK_CFG || {};
     document.getElementById('bkOpenUntil').value = c.open_until || '';
-    document.getElementById('bkArtistSlots').innerHTML = bookArtists().map(a => `<div class="row" style="gap:6px; align-items:center; margin-bottom:4px;"><span style="flex:1; font-size:11.5px;">${esc(a.name)}</span><input class="bkASlots" data-id="${a.id}" value="${esc(((c.artist_slots||{})[a.id] || c.slots || []).map(t => t.replace(':','.')).join(', '))}" style="flex:2.6; font-size:12px; padding:7px 8px;" /></div>`).join('');
+    document.getElementById('bkArtistSlots').innerHTML = bookArtists().map(a => { const days = (c.artist_days||{})[a.id] || c.days || [2,3,4,5];
+      return `<div style="margin-bottom:10px;"><div class="row" style="gap:6px; align-items:center;"><span style="flex:1; font-size:11.5px; font-weight:600;">${esc(a.name)}</span><input class="bkASlots" data-id="${a.id}" value="${esc(((c.artist_slots||{})[a.id] || c.slots || []).map(t => t.replace(':','.')).join(', '))}" style="flex:2.6; font-size:12px; padding:7px 8px;" /></div>
+        <div style="display:flex; gap:4px; margin-top:4px; justify-content:flex-end;">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((n,i) => `<label style="font-size:10px; display:flex; flex-direction:column; align-items:center; gap:2px;"><input type="checkbox" class="bkADay" data-id="${a.id}" value="${i+1}" ${days.includes(i+1)?'checked':''} style="width:auto;">${n}</label>`).join('')}</div></div>`; }).join('')
+      + `<div class="row" style="gap:6px; align-items:center; margin-top:6px;"><span style="flex:2.6; font-size:11px; color:var(--muted);">Online booking closes the day before at (hour). Same-day & later → Instagram DM.</span><input id="bkCutoff" type="number" min="0" max="23" value="${c.cutoff_hour ?? 17}" style="flex:1; font-size:12px; padding:7px 8px;" /></div>`;
     document.getElementById('bkDpOwner').value = (c.dp||{}).owner || ''; document.getElementById('bkDpSenior').value = (c.dp||{}).senior || ''; document.getElementById('bkDpJunior').value = (c.dp||{}).junior || '';
     const G = {base:'Treatment', removal:'Removal (only with a treatment)', design:'Design (one per booking)', extra:'Extra'};
     let last = '';
@@ -2117,6 +2160,9 @@ if (document.getElementById('page-website')){
     const c = JSON.parse(JSON.stringify(BOOK_CFG || {}));
     c.open_until = document.getElementById('bkOpenUntil').value || c.open_until;
     c.dp = { owner: +document.getElementById('bkDpOwner').value || 0, senior: +document.getElementById('bkDpSenior').value || 0, junior: +document.getElementById('bkDpJunior').value || 0 };
+    c.artist_days = c.artist_days || {};
+    bookArtists().forEach(a => { c.artist_days[a.id] = [...document.querySelectorAll(`.bkADay[data-id="${a.id}"]:checked`)].map(x => +x.value); });
+    c.cutoff_hour = Math.min(23, Math.max(0, parseInt(document.getElementById('bkCutoff').value) || 17));
     c.artist_slots = c.artist_slots || {};
     for (const i of document.querySelectorAll('.bkASlots')){
       const list = i.value.split(/[,\s]+/).filter(Boolean).map(t => { const m = t.replace('.',':').match(/^(\d{1,2}):(\d{2})$/); return m ? m[1].padStart(2,'0') + ':' + m[2] : null; });
