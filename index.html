@@ -1940,7 +1940,7 @@ async function loadAppts(){
 }
 function apptLine(a){
   return `<div style="font-size:11px; color:var(--muted);">${dayLabel(a.appt_date)} · ${minToHM(a.start_min)}–${minToHM(a.start_min + a.duration_min)} · ${esc(a.artist_name||'')}</div>
-    <div style="font-size:12px; margin-top:2px;">${esc(a.summary||'')} <span style="color:var(--muted);">(±${durLabel(a.duration_min)})</span></div>
+    <div style="font-size:12px; margin-top:2px;">${esc(a.summary||'')} <span style="color:var(--muted);">(±${durLabel(a.duration_min)}${a.est_min != null ? ' · est. Rp ' + rupiah(a.est_min) + (a.est_max !== a.est_min ? '–' + rupiah(a.est_max) : '') : ''})</span></div>
     ${a.note ? `<div style="font-size:11px; color:var(--muted); margin-top:2px;">“${esc(a.note)}”</div>` : ''}`;
 }
 const minToHM = m => String(Math.floor(m/60)).padStart(2,'0') + ':' + String(m%60).padStart(2,'0');
@@ -2097,7 +2097,7 @@ if (document.getElementById('page-website')){
       <div class="row" style="gap:6px;"><div style="flex:1;"><label style="font-size:10.5px; color:var(--muted);">DP owner</label><input id="bkDpOwner" type="number" /></div><div style="flex:1;"><label style="font-size:10.5px; color:var(--muted);">DP senior</label><input id="bkDpSenior" type="number" /></div><div style="flex:1;"><label style="font-size:10.5px; color:var(--muted);">DP junior</label><input id="bkDpJunior" type="number" /></div></div>
       <div style="font-size:10.5px; color:var(--muted); margin-top:4px;">Usual times per nail artist, Tuesday–Friday (comma separated). The monthly schedule starts from these; open or close single times there.</div>
       <div id="bkArtistSlots"></div>
-      <div style="font-size:10.5px; color:var(--muted); margin-top:4px;">Duration in minutes per level (Owner / Senior / Junior). Leave empty = not offered with that level. These decide which times are blocked.</div>
+      <div style="font-size:10.5px; color:var(--muted); margin-top:4px;">Per service: duration in minutes, and below it the price estimate in thousands (e.g. 175-225) shown to clients — columns Owner / Senior / Junior. Empty duration = not offered with that level.</div>
       <div id="bkSvcTable"></div>
       <button class="btn-primary tap" id="bkSetSave">Save booking settings</button>
     </div></div>`);
@@ -2109,7 +2109,9 @@ if (document.getElementById('page-website')){
     const G = {base:'Treatment', removal:'Removal (only with a treatment)', design:'Design (one per booking)', extra:'Extra'};
     let last = '';
     document.getElementById('bkSvcTable').innerHTML = (c.services||[]).map(s => { const head = s.group !== last ? `<div style="font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:10px 0 4px;">${G[s.group]||s.group}</div>` : ''; last = s.group;
-      return head + `<div class="row" style="gap:4px; margin-bottom:4px; align-items:center;"><span style="flex:2.4; font-size:11.5px;">${esc(s.en)}</span>${['owner','senior','junior'].map(t => `<input class="bkMin" data-key="${s.key}" data-tier="${t}" type="number" inputmode="numeric" value="${s.min[t] ?? ''}" placeholder="—" style="flex:1; font-size:12px; padding:7px 6px;" />`).join('')}</div>`; }).join('');
+      const pv = t => { const p = (s.price||{})[t]; return p ? (p[0] === p[1] ? p[0]/1000 : p[0]/1000 + '-' + p[1]/1000) : ''; };
+      return head + `<div style="margin-bottom:8px;"><div class="row" style="gap:4px; align-items:center;"><span style="flex:2.4; font-size:11.5px;">${esc(s.en)}</span>${['owner','senior','junior'].map(t => `<input class="bkMin" data-key="${s.key}" data-tier="${t}" type="number" inputmode="numeric" value="${s.min[t] ?? ''}" placeholder="—" style="flex:1; font-size:12px; padding:7px 6px;" />`).join('')}</div>
+        <div class="row" style="gap:4px; align-items:center; margin-top:3px;"><span style="flex:2.4; font-size:10px; color:var(--muted); text-align:right; padding-right:4px;">price (K)</span>${['owner','senior','junior'].map(t => `<input class="bkPrice" data-key="${s.key}" data-tier="${t}" value="${pv(t)}" placeholder="—" style="flex:1; font-size:11px; padding:6px;" />`).join('')}</div></div>`; }).join('');
   })();
   document.getElementById('bkSetSave').onclick = async () => {
     const c = JSON.parse(JSON.stringify(BOOK_CFG || {}));
@@ -2120,6 +2122,13 @@ if (document.getElementById('page-website')){
       const list = i.value.split(/[,\s]+/).filter(Boolean).map(t => { const m = t.replace('.',':').match(/^(\d{1,2}):(\d{2})$/); return m ? m[1].padStart(2,'0') + ':' + m[2] : null; });
       if (list.some(x => !x)) return alert('Times must look like 08.00, 12.30, 16.00');
       c.artist_slots[i.dataset.id] = [...new Set(list)].sort();
+    }
+    for (const i of document.querySelectorAll('.bkPrice')){
+      const s = c.services.find(x => x.key === i.dataset.key); s.price = s.price || {};
+      const v = i.value.trim().replace(/k/ig,''); if (!v){ s.price[i.dataset.tier] = null; continue; }
+      const m = v.match(/^(\d+(?:[.,]\d+)?)\s*(?:-|–)?\s*(\d+(?:[.,]\d+)?)?$/); if (!m) return alert('Price must look like 110 or 175-225 (in thousands)');
+      const lo = Math.round(parseFloat(m[1].replace(',','.'))*1000), hi = m[2] ? Math.round(parseFloat(m[2].replace(',','.'))*1000) : lo;
+      s.price[i.dataset.tier] = [Math.min(lo,hi), Math.max(lo,hi)];
     }
     document.querySelectorAll('.bkMin').forEach(i => { const s = c.services.find(x => x.key === i.dataset.key); const v = i.value.trim(); s.min[i.dataset.tier] = v === '' ? null : Math.max(5, parseInt(v) || 0); });
     const { error } = await sb.from('ngd_site').upsert({ key:'booking', value:c, updated_by:currentUser.id, updated_at:new Date().toISOString() });
