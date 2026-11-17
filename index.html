@@ -1277,6 +1277,7 @@ function treatmentRowHtml(t){
     <div class="row" style="justify-content:space-between; font-size:12.5px; font-weight:600; border-top:1px solid var(--text); margin-top:4px; padding-top:4px;"><span>Total</span><span>Rp ${rupiah(t.total)}</span></div>
     ${t.note ? `<div style="font-size:11px; color:var(--muted); margin-top:4px;">Note for client: ${esc(t.note)}</div>` : ''}
     ${canConfirm ? `<div class="row" style="gap:6px; margin-top:8px;"><button class="btn-primary tap" data-confirm="${t.id}" style="flex:1; font-size:11px; padding:7px;">✓ Confirm price</button><button class="btn-ghost tap" data-canceltreat="${t.id}" style="font-size:11px; padding:7px 10px;">Cancel</button></div>` : ''}
+    ${(isOwner || currentUser.role === 'Admin' || t.created_by === currentUser.id || t.artist_id === currentUser.id) ? `<button class="btn-ghost tap" data-mkset="${t.id}" style="width:100%; margin-top:8px; font-size:11px; padding:7px;">📸 Today's Set${(SETS_BY_T[t.id]||[]).some(x => x.status==='sent' && new Date(x.expires_at) > new Date()) ? ' · sent ✓' : ''}</button>` : ''}
   </div>`;
 }
 async function loadTreatments(){
@@ -1698,6 +1699,90 @@ document.addEventListener('click', async e => {
   }
 });
 document.getElementById('topnav').addEventListener('click', e => { const b = e.target.closest('.navbtn'); if (b && b.dataset.key === 'chat') loadChat(); });
+
+
+// ---------- TODAY'S SET (photos → client receipt card, kept 7 days) ----------
+const SET_BUCKET = 'ngd-sets';
+let SETS_BY_T = {};
+async function loadSets(){
+  const { data } = await sb.from('ngd_sets').select('*').order('created_at',{ascending:false}).limit(200);
+  SETS_BY_T = {};
+  (data||[]).forEach(x => { if (x.treatment_id) (SETS_BY_T[x.treatment_id] = SETS_BY_T[x.treatment_id] || []).push(x); });
+  // clean up photos older than 7 days (files are deleted, the record stays)
+  const expired = (data||[]).filter(x => x.status === 'sent' && new Date(x.expires_at) < new Date() && (x.photos||[]).length);
+  for (const x of expired){
+    if (!(isOwner || currentUser.role === 'Admin' || x.created_by === currentUser.id)) continue;
+    await sb.storage.from(SET_BUCKET).remove(x.photos);
+    await sb.from('ngd_sets').update({status:'expired', photos:[]}).eq('id', x.id);
+  }
+}
+function openSetEditor(tid){
+  const t = TREATMENTS.find(x => x.id === tid); if (!t) return;
+  const client = clients.find(c => c.id === t.client_id) || {name:'Client'};
+  const prev = (SETS_BY_T[tid]||[]).find(x => x.status === 'sent' && new Date(x.expires_at) > new Date());
+  let files = [];
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed; inset:0; background:rgba(17,17,17,.45); z-index:80; display:flex; align-items:flex-end; justify-content:center;';
+  ov.innerHTML = `<div style="background:var(--bg); width:100%; max-width:440px; max-height:92vh; overflow:auto; border-radius:22px 22px 0 0; padding:20px 18px 26px;">
+    <div class="row" style="justify-content:space-between;"><div><div class="eyebrow">Today's Set</div><div class="title" style="font-size:13px;">${esc(client.name)} · ${t.treatment_date}</div></div><span class="tap" id="setClose" style="cursor:pointer; font-size:20px;">✕</span></div>
+    ${prev ? `<div style="font-size:11.5px; background:var(--tint); border-radius:10px; padding:8px 10px; margin-top:10px;">Already sent — visible to the client until <b>${new Date(prev.expires_at).toLocaleString('id-ID')}</b>. Sending again creates a new card.</div>` : ''}
+    <label style="display:block; font-size:10.5px; color:var(--muted); margin:12px 0 6px;">Set name (shown on the receipt, e.g. Soft Glazed Almond)</label>
+    <input id="setTitle" maxlength="40" value="${esc(((t.items||[])[0]||{}).label || '')}" />
+    <label style="display:block; font-size:10.5px; color:var(--muted); margin:12px 0 6px;">Photos — up to 3. Use ← → to arrange; the first photo is the big one.</label>
+    <input id="setFiles" type="file" accept="image/*" multiple />
+    <div id="setThumbs" style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px;"></div>
+    <div style="font-size:10.5px; color:var(--muted); margin-top:10px;">⏳ Photos are kept for <b>7 days</b> after you send, so the client can download their card. After that the photos are deleted automatically.</div>
+    <button class="btn-primary tap" id="setSend" style="width:100%; margin-top:14px; padding:12px;">Send to ${esc(client.name)}</button>
+  </div>`;
+  document.body.appendChild(ov);
+  const thumbs = () => {
+    document.getElementById('setThumbs').innerHTML = files.map((f,i) => `<div style="position:relative;">
+      <img src="${f.url}" style="width:100%; aspect-ratio:3/4; object-fit:cover; border-radius:10px; ${i===0?'outline:2px solid var(--accent);':''}" />
+      <div class="row" style="justify-content:space-between; margin-top:4px; font-size:13px;">
+        <span class="tap" data-mv="${i}" data-d="-1" style="cursor:pointer; ${i===0?'opacity:.25':''}">←</span>
+        <span style="font-size:10px; color:var(--muted);">${i+1}</span>
+        <span class="tap" data-mv="${i}" data-d="1" style="cursor:pointer; ${i===files.length-1?'opacity:.25':''}">→</span>
+        <span class="tap" data-rm="${i}" style="cursor:pointer;">✕</span></div></div>`).join('');
+  };
+  ov.addEventListener('click', e => {
+    if (e.target.id === 'setClose' || e.target === ov){ ov.remove(); return; }
+    const mv = e.target.dataset && e.target.dataset.mv;
+    if (mv !== undefined){ const i = +mv, j = i + (+e.target.dataset.d); if (j < 0 || j >= files.length) return; [files[i], files[j]] = [files[j], files[i]]; thumbs(); }
+    const rm = e.target.dataset && e.target.dataset.rm;
+    if (rm !== undefined){ files.splice(+rm, 1); thumbs(); }
+  });
+  document.getElementById('setFiles').onchange = e => {
+    const add = [...e.target.files].map(f => ({file:f, url:URL.createObjectURL(f)}));
+    const over = files.length + add.length > 3;
+    files = files.concat(add).slice(0, 3); e.target.value = ''; thumbs();
+    if (over) alert('Maximum 3 photos — extra photos were not added.');
+  };
+  document.getElementById('setSend').onclick = async () => {
+    if (!files.length) return alert('Add at least one photo.');
+    const btn = document.getElementById('setSend'); btn.disabled = true; btn.textContent = 'Sending…';
+    try {
+      const ins = await sb.from('ngd_sets').insert({treatment_id:t.id, client_id:t.client_id, created_by:currentUser.id, title:document.getElementById('setTitle').value.trim() || null}).select().single();
+      if (ins.error) throw ins.error;
+      const paths = [];
+      for (let i = 0; i < files.length; i++){
+        const blob = await resizeImage(files[i].file, 1440, 0.85);
+        const path = `sets/${ins.data.id}/${i+1}.webp`;
+        const up = await sb.storage.from(SET_BUCKET).upload(path, blob, {contentType:'image/webp', upsert:true});
+        if (up.error) throw up.error;
+        paths.push(path);
+      }
+      const upd = await sb.from('ngd_sets').update({photos: paths}).eq('id', ins.data.id);
+      if (upd.error) throw upd.error;
+      const snd = await sb.rpc('ngd_send_set', { p_set_id: ins.data.id });
+      if (snd.error) throw snd.error;
+      ov.remove();
+      alert(`Sent to ${client.name} ♡\nIt shows on their page as a notification. Photos stay until ${new Date(snd.data).toLocaleString('id-ID')}.${client.hasLogin ? '' : '\n\nNote: this client has no website login yet — create one so they can see it.'}`);
+      await loadSets(); await loadTreatments();
+    } catch(err){ btn.disabled = false; btn.textContent = 'Send to ' + client.name; alert('Could not send: ' + err.message); }
+  };
+}
+document.addEventListener('click', e => { const id = e.target.dataset && e.target.dataset.mkset; if (id) openSetEditor(id); });
+loadSets().then(() => loadTreatments());
 
 document.getElementById('logoutBtn').onclick = async () => { await sb.auth.signOut(); location.reload(); };
 document.getElementById('changePwBtn').onclick = async () => {
