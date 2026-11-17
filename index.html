@@ -2027,16 +2027,17 @@ async function bkInstagram(){
   const isOwner = artist.role === 'Owner';
   g.fillStyle = isOwner ? '#BEAA9C' : '#EBE2D8'; g.fillRect(0, 0, W, H);
   g.fillStyle = '#141414'; g.textBaseline = 'alphabetic';
-  spaced(`${MONTH_NAMES[BK_MONTH.m]} ${BK_MONTH.y}`, W/2, isOwner ? 300 : 300, 64, 26);
-  if (isOwner) spaced('By Natasya Gishelle', W/2, 378, 38, 14);
-  else { spaced(`By Team-${artist.name}`, W/2, 382, 34, 10); spaced(artist.role === 'Senior artist' ? '(Senior nail artist)' : '(Junior nail artist)', W/2, 418, 34, 10); }
-  const cx0 = 188, cy0 = 475, cw = 704, chh = 1225, r = 64;
+  spaced(`${MONTH_NAMES[BK_MONTH.m]} ${BK_MONTH.y}`, W/2, 182, 62, 19);
+  if (isOwner) spaced('By Natasya Gishelle', W/2, 262, 36, 11);
+  else { spaced(`By Team-${artist.name}`, W/2, 248, 32, 9); spaced(artist.role === 'Senior artist' ? '(Senior nail artist)' : '(Junior nail artist)', W/2, 288, 32, 9); }
+  const cx0 = 118, cy0 = 335, cw = 844, chh = 1515, r = 64;
   g.fillStyle = isOwner ? '#F3EFEC' : '#FAF8F6'; g.beginPath(); g.moveTo(cx0+r, cy0); g.arcTo(cx0+cw, cy0, cx0+cw, cy0+chh, r); g.arcTo(cx0+cw, cy0+chh, cx0, cy0+chh, r); g.arcTo(cx0, cy0+chh, cx0, cy0, r); g.arcTo(cx0, cy0, cx0+cw, cy0, r); g.closePath(); g.fill();
   const fmt = t => isOwner ? (t.endsWith(':00') ? t.slice(0,2) : t.replace(':','.')) : t.replace(':','.');
   const cols = Math.max(...days.map(d => Math.max(d.sessions||0, ...d.slots.map(x => (x.group ?? 0) + 1))));
-  const top = cy0 + 55, bottom = cy0 + chh - 75, rowH = Math.min(72, (bottom - top) / days.length);
-  const size = Math.max(20, Math.min(30, rowH * 0.45));
-  const dateX = cx0 + 95, colL = cx0 + 165, colR = cx0 + cw - 40, colW = (colR - colL) / cols;
+  const top = cy0 + 50, bottom = cy0 + chh - 60, rowH = Math.min(88, (bottom - top) / days.length);
+  const size = Math.max(22, Math.min(34, rowH * 0.42));
+  const dateX = cx0 + 88, colL = cx0 + 150, colR = cx0 + cw - 50, colW = (colR - colL) / cols;
+  const todayStr = todayISO();
   g.fillStyle = '#141414';
   days.forEach((d, i) => {
     const y = top + rowH * i + rowH * 0.6;
@@ -2044,10 +2045,11 @@ async function bkInstagram(){
     for (let k = 0; k < cols; k++){
       const cand = d.slots.filter(x => (x.group ?? 0) === k); if (!cand.length) continue;
       const avail = cand.filter(x => x.open && !x.booked), taken = cand.filter(x => x.open && x.booked), defs = cand.filter(x => x.default);
-      const show = avail.length ? avail : taken.length ? taken : (defs.length ? defs : cand), struck = !avail.length;
+      const past = d.date < todayStr;
+      const show = (!past && avail.length) ? avail : taken.length ? taken : (defs.length ? defs : cand), struck = past || !avail.length;
       const t = show.map(x => fmt(x.time)).join('/'), x = colL + colW * k + colW/2;
       g.fillText(t, x, y);
-      if (struck){ const w = Math.min(colW - 8, g.measureText(t).width + 40); g.fillRect(x - w/2, y - size*0.32, w, 3.5); }
+      if (struck){ const w = Math.min(colW - 10, g.measureText(t).width + 44); g.fillRect(x - w/2, y - size*0.3, w, 3.5); }
     }
   });
   const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
