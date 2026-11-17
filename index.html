@@ -2056,12 +2056,17 @@ async function bkInstagram(){
   if (navigator.canShare && navigator.canShare({ files: [file] })){ try { await navigator.share({ files: [file] }); return; } catch(e){ if (e.name === 'AbortError') return; } }
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
 }
+function gcalTitle(a){
+  const c = clients.find(x => x.id === a.client_id) || {};
+  const ig = (c.instagram||'').trim().replace(/^https?:\/\/(www\.)?instagram\.com\//i,'').replace(/[\/?].*$/,'').replace(/^@/,'');
+  return `${a.artist_name||''} Nailart ${ig ? '@' + ig : (a.client_name||'')}`.trim();
+}
 function gcalUrl(a, emails){
   const d = a.appt_date.replace(/-/g,''), hm = m => String(Math.floor(m/60)).padStart(2,'0') + String(m%60).padStart(2,'0') + '00';
   const details = [`Client: ${a.client_name||'—'}`, `Nail artist: ${a.artist_name||''}`, `Treatment: ${a.summary||''} (±${durLabel(a.duration_min)})`,
     a.est_min != null ? `Estimate: Rp ${rupiah(a.est_min)}${a.est_max !== a.est_min ? '–' + rupiah(a.est_max) : ''}` : '', a.dp_amount ? `DP: Rp ${rupiah(a.dp_amount)}` : '',
     a.note ? `Note: ${a.note}` : '', '', 'Added from NG Dashboard'].filter((x,i) => x !== '' || i === 6).join('\n');
-  const q = new URLSearchParams({ action:'TEMPLATE', text:`${a.client_name||'Client'} · ${a.artist_name||''} · NG Nailart`, dates:`${d}T${hm(a.start_min)}/${d}T${hm(a.start_min + a.duration_min)}`,
+  const q = new URLSearchParams({ action:'TEMPLATE', text:gcalTitle(a), dates:`${d}T${hm(a.start_min)}/${d}T${hm(a.start_min + a.duration_min)}`,
     ctz:'Asia/Jakarta', details, location:'NG Nailart Studio, https://maps.app.goo.gl/stbt8p5nuJvAo73T9' });
   if (emails.length) q.set('add', emails.join(','));
   return 'https://calendar.google.com/calendar/render?' + q.toString();
