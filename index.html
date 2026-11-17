@@ -216,7 +216,7 @@ function mapClientRow(r){
   return { id:r.id, name:r.name, birthday:r.birthday||'—', visits:r.visits||0, last:r.last_visit||'—', artist:r.artist||'—',
     pref:r.pref||[], rating:r.rating||5, note:r.note||'',
     sharedNote:r.shared_note || '', username:r.username||'', hasLogin:!!r.user_id, mustSetPin:!!r.must_set_pin, clientNote:r.client_note||'', birthdayRaw:r.birthday||'',
-    sensitivity:r.sensitivity||'', achievements:r.achievements||{}, phone:r.phone||'', instagram:r.instagram||'', area:r.area||'', referral:r.referral||'', referralDetail:r.referral_detail||'', firstVisit:r.first_visit||'' };
+    sensitivity:r.sensitivity||'', achievements:r.achievements||{}, achReq:r.ach_requests||{}, phone:r.phone||'', instagram:r.instagram||'', area:r.area||'', referral:r.referral||'', referralDetail:r.referral_detail||'', firstVisit:r.first_visit||'' };
 }
 function clientCardHtml(c){
   return `
@@ -225,7 +225,8 @@ function clientCardHtml(c){
       <div class="avatar">${c.name[0]}</div>
       <div style="flex:1">
         <div style="font-family:Montserrat,sans-serif; font-weight:600; font-size:15.5px;">${c.name}</div>
-        <div style="font-size:11.5px; color:var(--muted);">Last visit ${c.last} · with ${c.artist}</div>
+        <div style="font-size:11.5px; color:var(--muted);">Last visit ${c.last} · main artist ${esc(c.artist)}</div>
+        ${artistCountLine(c)}
       </div>
       <div class="tag">${c.visits} visits</div>
     </div>
@@ -268,12 +269,32 @@ const isOwnerOrAdmin = currentUser.role === 'Owner' || currentUser.role === 'Adm
 document.getElementById('loggedInAsLine').innerHTML = isOwnerOrAdmin
   ? `<b>${currentUser.name}</b> — ${currentUser.role} · sees every client automatically, no switching needed`
   : `<b>${currentUser.name}</b> — ${currentUser.role} · only your own clients show here automatically`;
+let ARTIST_COUNTS = {};
+async function loadArtistCounts(){
+  const { data } = await sb.from('ngd_treatments').select('client_id,artist_name').neq('status','cancelled');
+  ARTIST_COUNTS = {};
+  (data||[]).forEach(t => { const m = ARTIST_COUNTS[t.client_id] || (ARTIST_COUNTS[t.client_id] = {}); const n = t.artist_name || '?'; m[n] = (m[n]||0) + 1; });
+  renderClients((document.getElementById('clientSearch')||{}).value || '');
+}
+function artistCountLine(c){
+  const m = ARTIST_COUNTS[c.id]; if (!m) return '';
+  return `<div style="font-size:11px; color:var(--muted); margin-top:2px;">✂️ Visits with: ${Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([n,k]) => `<b style="font-weight:600; color:var(--text);">${esc(n)}</b> ${k}×`).join(' · ')}</div>`;
+}
+function achRequestsHtml(list){
+  const req = list.filter(c => c.achReq && Object.keys(c.achReq).length);
+  if (!req.length) return '';
+  const lab = k => (ACH_LIST.find(a => a[0]===k)||[k,k])[1];
+  return `<div class="card" style="border:1.5px solid var(--text);"><div class="eyebrow">✋ Tick requests from clients</div>
+    <div style="font-size:11px; color:var(--muted); margin:4px 0 8px;">Check it, then tick the box on the client's card. The request disappears once ticked.</div>
+    ${req.map(c => Object.entries(c.achReq).map(([k,v]) => `<div class="tap" data-achgo="${esc(c.name)}" style="font-size:12px; padding:6px 0; border-top:1px dotted var(--line); cursor:pointer;"><b>${esc(c.name)}</b> — ${esc(lab(k))}${v && v.note ? `<br><span style="color:var(--muted);">“${esc(v.note)}”</span>` : ''}</div>`).join('')).join('')}</div>`;
+}
 function renderClients(filter){
   const f = (filter||'').toLowerCase().trim();
   const scoped = isOwnerOrAdmin ? clients : clients.filter(c => c.artist.startsWith(currentUser.name));
   const results = scoped.filter(c => !f || (c.name+' '+c.pref.join(' ')+' '+c.note+' '+c.sharedNote+' '+c.artist+' '+(c.instagram||'')+' '+(c.area||'')+' '+(c.phone||'')+' '+(c.username||'')+' '+(c.sensitivity||'')).toLowerCase().includes(f));
-  document.getElementById('clientResults').innerHTML = results.length ? results.map(clientCardHtml).join('') : `<div class="card"><div style="font-size:12.5px; color:var(--muted);">No clients yet — add your first one below.</div></div>`;
+  document.getElementById('clientResults').innerHTML = (f ? '' : achRequestsHtml(scoped)) + (results.length ? results.map(clientCardHtml).join('') : `<div class="card"><div style="font-size:12.5px; color:var(--muted);">No clients yet — add your first one below.</div></div>`);
 }
+document.addEventListener('click', e => { const g = e.target.closest('[data-achgo]'); if (!g) return; const s = document.getElementById('clientSearch'); s.value = g.dataset.achgo; renderClients(s.value); });
 document.getElementById('clientSearch').oninput = e => renderClients(e.target.value);
 document.getElementById('clientSearchBtn').onclick = () => renderClients(document.getElementById('clientSearch').value);
 const REFERRALS = ['Instagram','TikTok','Friend / family referral','Google Maps','Walk-in / passing by','Event / bazaar','Other'];
@@ -296,7 +317,10 @@ function clientFormFields(c){
       <input id="cfVisits" type="number" min="0" inputmode="numeric" value="${c.visits ?? 0}" />
       <label style="font-size:10.5px; color:var(--muted);">First visit date (optional)</label>
       <input id="cfFirst" type="date" value="${v('firstVisit')}" />
-      <input id="cfArtist" placeholder="Main nail artist (e.g. Nayla)" value="${c.artist && c.artist !== '—' ? v('artist') : (currentUser.role==='Owner'||currentUser.role==='Admin' ? '' : esc(currentUser.name))}" />
+      <label style="font-size:10.5px; color:var(--muted);">Main nail artist</label>
+      ${(() => { const cur = c.artist && c.artist !== '—' ? c.artist : (currentUser.role==='Owner'||currentUser.role==='Admin' ? '' : currentUser.name);
+        const names = artists().map(a => a.name); if (cur && !names.includes(cur)) names.push(cur);
+        return `<select id="cfArtist"><option value="">— not set —</option>${names.map(n => `<option ${n===cur?'selected':''}>${esc(n)}</option>`).join('')}</select>`; })()}
       <input id="cfPref" placeholder="Style preferences, comma separated" value="${esc((c.pref||[]).join(', '))}" />`;
 }
 function readClientForm(){
@@ -1004,6 +1028,7 @@ showPage('home');
 
   clients = (clientsRes.data||[]).map(mapClientRow);
   renderClients('');
+  loadArtistCounts();
 
   CAL_BOOKINGS = {};
   (bookingsRes.data||[]).forEach(b => {
@@ -1117,6 +1142,7 @@ document.addEventListener('change', async e => {
   const { error } = await sb.from('ngd_clients').update({achievements: ach}).eq('id', c.id);
   if (error){ t.checked = !t.checked; return alert(error.message); }
   c.achievements = ach;
+  if (t.checked && c.achReq && c.achReq[t.dataset.key]) { const q = {...c.achReq}; delete q[t.dataset.key]; c.achReq = q; renderClients(document.getElementById('clientSearch').value); }
 });
 function clientExtrasHtml(c){
   const mine = PRIVATE_NOTES.find(n => n.client_id === c.id && n.author_id === currentUser.id);
@@ -1131,7 +1157,7 @@ function clientExtrasHtml(c){
     <button class="btn-ghost tap" data-editdetails="${c.id}" style="font-size:10.5px; padding:6px 10px; margin-bottom:8px;">✏️ Edit details & visit count</button>
     <div id="edit-${c.id}"></div>
     <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">🌱 Support our growth — tick what this client has done (shows on their page)</div>
-    <div style="display:grid; gap:4px; margin-bottom:10px;">${ACH_LIST.map(([k,l]) => `<label class="row" style="gap:8px; font-size:12px;"><input type="checkbox" style="width:auto;" data-ach="${c.id}" data-key="${k}" ${c.achievements[k] ? 'checked' : ''}/> ${l}${c.achievements[k] ? ` <span style="color:var(--muted); font-size:10px;">(${esc(c.achievements[k])})</span>` : ''}</label>`).join('')}</div>
+    <div style="display:grid; gap:4px; margin-bottom:10px;">${ACH_LIST.map(([k,l]) => `<label class="row" style="gap:8px; font-size:12px; align-items:flex-start;"><input type="checkbox" style="width:auto; margin-top:2px;" data-ach="${c.id}" data-key="${k}" ${c.achievements[k] ? 'checked' : ''}/> <span>${l}${c.achievements[k] ? ` <span style="color:var(--muted); font-size:10px;">(${esc(c.achievements[k])})</span>` : ''}${!c.achievements[k] && c.achReq && c.achReq[k] ? `<br><span style="font-size:10.5px; color:#8A2D1F;">✋ Client asked for this tick${c.achReq[k].note ? ': “' + esc(c.achReq[k].note) + '”' : ''}</span>` : ''}</span></label>`).join('')}</div>
     <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">👤 Client website account</div>
     ${c.hasLogin ? `
       <div style="font-size:12.5px;">Username: <b>${esc(c.username)}</b> ${c.mustSetPin ? '<span class="tag">waiting for client to set PIN</span>' : '<span class="tag">active</span>'} <span class="tap" data-renamelogin="${c.id}" style="cursor:pointer; font-size:11px; color:var(--muted); text-decoration:underline;">edit</span></div>
@@ -1284,6 +1310,7 @@ function treatmentRowHtml(t){
 async function loadTreatments(){
   const { data } = await sb.from('ngd_treatments').select('*').neq('status','cancelled').order('created_at', {ascending:false}).limit(60);
   TREATMENTS = data || [];
+  loadArtistCounts();
   const mineOnly = !(isOwner || currentUser.role === 'Admin');
   const vis = mineOnly ? TREATMENTS.filter(t => t.artist_id === currentUser.id || t.created_by === currentUser.id) : TREATMENTS;
   const pend = vis.filter(t => t.status === 'pending'), done = vis.filter(t => t.status === 'confirmed').slice(0, 20);
@@ -1314,10 +1341,12 @@ function openTreatmentForm(clientId){
       <div id="tfRows"></div>
       <button class="btn-ghost tap" id="tfAddRow" style="font-size:11px;">+ Add item</button>
       <div class="row" style="gap:6px;">
-        <input id="tfDiscLabel" placeholder="Discount label (e.g. loyalty visit 2)" style="flex:2;" />
-        <input id="tfDisc" type="number" inputmode="numeric" placeholder="Discount Rp" style="flex:1;" />
+        <input id="tfDiscLabel" placeholder="Discount name (shown on receipt)" style="flex:2;" />
+        <input id="tfDisc" type="number" inputmode="numeric" placeholder="Amount Rp" style="flex:1;" />
       </div>
-      <input id="tfCoupon" placeholder="Coupon / gift card code (optional, e.g. NG-E67W)" style="text-transform:uppercase;" />
+      <div style="font-size:10.5px; color:var(--muted); margin-top:-2px;">Only if there is a discount. Name = what the client sees (e.g. "Loyalty stamp 8 – 15% off"), amount = how many rupiah are taken off (e.g. 52500). Leave both empty if none.</div>
+      <input id="tfCoupon" placeholder="Coupon / gift card code (only if the client shows one)" style="text-transform:uppercase;" autocapitalize="characters" />
+      <div id="tfCouponInfo" style="font-size:11px; color:var(--muted); margin-top:-2px;"></div>
       <textarea id="tfNote" placeholder="Note the client will see (color, shape, design…)" style="min-height:44px;"></textarea>
       <div class="row" style="justify-content:space-between; font-weight:600;"><span>Total</span><span id="tfTotal">Rp 0</span></div>
       <button class="btn-primary tap" id="tfSave" style="width:100%;">Save treatment</button>
@@ -1342,7 +1371,7 @@ function openTreatmentForm(clientId){
       const c = clients.find(x => x.id === cid);
       const nextVisit = (c ? c.visits : 0) + 1;
       const cycle = ((nextVisit - 1) % 10) + 1;
-      document.getElementById('tfLoyalty').innerHTML = (c && c.sensitivity ? `<div style="background:#FBE9E7; color:#8A2D1F; border-radius:10px; padding:8px 10px; margin-bottom:6px;"><b>⚠️ Allergy / sensitivity:</b> ${esc(c.sensitivity)}</div>` : '') + `This will be visit <b>${nextVisit}</b> (stamp ${cycle} of 10).` + (LOYALTY[cycle] ? ` 🎁 <b>${LOYALTY[cycle].replace(/visit \d+/, 'stamp ' + cycle)}</b> — put it in the discount fields.` : '');
+      document.getElementById('tfLoyalty').innerHTML = (c && c.sensitivity ? `<div style="background:#FBE9E7; color:#8A2D1F; border-radius:10px; padding:8px 10px; margin-bottom:6px;"><b>⚠️ Allergy / sensitivity:</b> ${esc(c.sensitivity)}</div>` : '') + `This will be visit <b>${nextVisit}</b> (stamp ${cycle} of 10).` + (LOYALTY[cycle] ? ` 🎁 <b>${LOYALTY[cycle].replace(/visit \d+/, 'stamp ' + cycle)}</b> <button class="btn-ghost tap" id="tfUseReward" data-cycle="${cycle}" style="font-size:10.5px; padding:4px 10px; margin-top:4px;">Use this reward as the discount</button>` : '');
     }
     window._tfSheet = sheet;
     document.getElementById('tfItemsList').innerHTML =
@@ -1367,7 +1396,32 @@ function openTreatmentForm(clientId){
     }
     recalc();
   });
-  box.addEventListener('click', e => { if (e.target.classList.contains('tfDel')){ e.target.closest('.tfRow').remove(); recalc(); } });
+  box.addEventListener('click', e => {
+    if (e.target.classList.contains('tfDel')){ e.target.closest('.tfRow').remove(); recalc(); }
+    if (e.target.id === 'tfUseReward'){
+      const cyc = +e.target.dataset.cycle;
+      document.getElementById('tfDiscLabel').value = LOYALTY[cyc].replace(/visit \d+/, 'stamp ' + cyc).replace(/^Loyalty/, 'Loyalty');
+      let sub = 0; rows.querySelectorAll('.tfRow').forEach(r => { sub += (+r.querySelector('.tfQty').value||0) * (+r.querySelector('.tfUnit').value||0); });
+      const d = document.getElementById('tfDisc');
+      if (cyc === 8) d.value = Math.round(sub * 0.15);
+      else { d.value = ''; d.focus(); alert('Label filled in. Now type the amount in rupiah (e.g. the price of the free designs).'); }
+      recalc();
+    }
+  });
+  let couponTimer;
+  document.getElementById('tfCoupon').addEventListener('input', e => {
+    clearTimeout(couponTimer);
+    const code = e.target.value.trim().toUpperCase(), info = document.getElementById('tfCouponInfo');
+    if (code.length < 4){ info.textContent = ''; return; }
+    couponTimer = setTimeout(async () => {
+      const { data } = await sb.from('ngd_coupons').select('code,title_en,value_text,status,expires_on,client_id').eq('code', code).maybeSingle();
+      if (!data){ info.innerHTML = '❌ Code not found'; return; }
+      const who = (clients.find(c => c.id === data.client_id)||{}).name || '—';
+      const expired = data.expires_on && data.expires_on < todayISO();
+      info.innerHTML = data.status !== 'active' ? `❌ Already ${esc(data.status)}` : expired ? `❌ Expired on ${esc(data.expires_on)}`
+        : `✓ <b>${esc(data.title_en||'Coupon')}</b>${data.value_text ? ' — ' + esc(data.value_text) : ''} · for ${esc(who)}. It is marked as used when you save. Put its value in the discount above.`;
+    }, 350);
+  });
   document.getElementById('tfSave').onclick = async () => {
     const client_id = document.getElementById('tfClient').value;
     if (!client_id) return alert('Choose a client first.');
