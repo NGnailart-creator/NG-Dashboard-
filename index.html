@@ -64,13 +64,15 @@
       <div id="loginError" style="font-size:11.5px; color:#C74A3E; display:none;">Username or password not recognized.</div>
       <button class="btn-primary tap" id="loginBtn" style="width:100%; margin-top:6px;">Log in</button>
     </div>
-    <div style="font-size:10.5px; color:var(--muted); text-align:center; margin-top:16px;">Forgot your password? Ask the owner to look it up in Admin.</div>
+    <div style="font-size:10.5px; color:var(--muted); text-align:center; margin-top:16px;">Forgot your password? Ask the owner to reset it in Admin.</div>
   </div>
 </div>
 
 <div id="appRoot" style="display:none;">
 <div class="topnav" id="topnav"></div>
 <div style="display:flex; justify-content:flex-end; padding:6px 16px 0;">
+  <button id="changePwBtn" class="pill tap" style="font-size:10.5px; padding:5px 10px; margin-right:6px;">🔑 Password</button>
+  <button id="logoutBtn" class="pill tap" style="font-size:10.5px; padding:5px 10px; margin-right:6px;">Log out</button>
   <button id="langToggle" class="pill tap" style="font-size:10.5px; padding:5px 10px;">🌐 EN / ID</button>
 </div>
 <div class="page" id="pages"></div>
@@ -94,30 +96,38 @@ document.getElementById('loginPwToggle').onclick = () => {
 };
 document.getElementById('loginBtn').onclick = attemptLogin;
 document.getElementById('loginPass').addEventListener('keydown', e => { if (e.key==='Enter') attemptLogin(); });
-async function attemptLogin(){
-  const u = document.getElementById('loginUser').value.trim();
-  const p = document.getElementById('loginPass').value;
-  const btn = document.getElementById('loginBtn');
-  btn.textContent = 'Logging in...';
-  const { data: staffRows, error } = await sb.from('ngd_staff').select('*').order('created_at');
-  btn.textContent = 'Log in';
-  if (error){
-    document.getElementById('loginError').textContent = 'Could not reach the database. Check your connection and try again.';
-    document.getElementById('loginError').style.display = 'block';
-    return;
-  }
-  people = staffRows.map(r => ({ id:r.id, name:r.name, role:r.role, locked:r.role==='Owner', username:r.username, password:r.password, access:r.access }));
-  const match = people.find(person => person.username === u && person.password === p);
-  if (!match){
-    document.getElementById('loginError').textContent = 'Username or password not recognized.';
-    document.getElementById('loginError').style.display = 'block';
-    return;
-  }
-  currentUser = match;
+const STAFF_EMAIL = u => `${u.toLowerCase()}@team.ng-nailart.example`;
+function showLoginError(msg){ const el=document.getElementById('loginError'); el.textContent=msg; el.style.display='block'; }
+async function enterApp(){
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return false;
+  const { data: staffRows, error } = await sb.from('ngd_staff').select('id,name,role,username,access,user_id').order('created_at');
+  if (error || !staffRows){ showLoginError('Could not load your account. Try again.'); return false; }
+  people = staffRows.map(r => ({ id:r.id, name:r.name, role:r.role, locked:r.role==='Owner', username:r.username, access:r.access||{}, user_id:r.user_id }));
+  const me = people.find(p => p.user_id === user.id);
+  if (!me){ await sb.auth.signOut(); showLoginError('This account is not part of the team.'); return false; }
+  currentUser = me;
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('appRoot').style.display = 'block';
   initApp();
+  return true;
 }
+async function attemptLogin(){
+  const u = document.getElementById('loginUser').value.trim();
+  const p = document.getElementById('loginPass').value;
+  if (!u || !p) return;
+  const btn = document.getElementById('loginBtn');
+  btn.textContent = 'Logging in...';
+  const { error } = await sb.auth.signInWithPassword({ email: STAFF_EMAIL(u), password: p });
+  btn.textContent = 'Log in';
+  if (error){
+    showLoginError(/fetch|network/i.test(error.message) ? 'Could not reach the database. Check your connection and try again.' : 'Username or password not recognized.');
+    return;
+  }
+  await enterApp();
+}
+// stay logged in on this device
+sb.auth.getSession().then(({ data }) => { if (data.session) enterApp(); });
 
 function initApp(){
 const PAGES_FOR_MATRIX = ['Clients','Bookings','Knowledge','Chit-chat'];
@@ -143,7 +153,7 @@ const TABS = [
   {key:'knowledge', label:'Knowledge', icon:'📚'},
   {key:'chitchat', label:'Chit-chat', icon:'💬'},
   {key:'team', label:'Team', icon:'👥'},
-  {key:'pricing', label:'Pricing', icon:'💰', roles:['Owner','Instagram admin']},
+  {key:'pricing', label:'Pricing', icon:'💰', roles:['Owner','Admin']},
   {key:'admin', label:'Admin', icon:'🛡️', roles:['Owner']}
 ];
 const visibleTabs = TABS.filter(tb => !tb.roles || tb.roles.includes(currentUser.role));
@@ -248,7 +258,7 @@ pages.innerHTML += `
     <div id="addClientForm"></div>
   </div>
 </div>`;
-const isOwnerOrAdmin = currentUser.role === 'Owner' || currentUser.role === 'Instagram admin';
+const isOwnerOrAdmin = currentUser.role === 'Owner' || currentUser.role === 'Admin';
 document.getElementById('loggedInAsLine').innerHTML = isOwnerOrAdmin
   ? `<b>${currentUser.name}</b> — ${currentUser.role} · sees every client automatically, no switching needed`
   : `<b>${currentUser.name}</b> — ${currentUser.role} · only your own clients show here automatically`;
@@ -266,7 +276,7 @@ document.getElementById('addClientBtn').onclick = () => {
     <div style="display:grid; gap:8px;">
       <input id="newClientName" placeholder="Client name" />
       <input id="newClientBirthday" placeholder="Birthday (e.g. Mar 14)" />
-      <input id="newClientArtist" placeholder="Nail artist (e.g. Nayla (senior))" value="${currentUser.role==='Owner'||currentUser.role==='Instagram admin' ? '' : currentUser.name}" />
+      <input id="newClientArtist" placeholder="Nail artist (e.g. Nayla (senior))" value="${currentUser.role==='Owner'||currentUser.role==='Admin' ? '' : currentUser.name}" />
       <input id="newClientPref" placeholder="Style preferences, comma separated" />
       <textarea id="newClientNote" placeholder="Notes" style="min-height:50px;"></textarea>
       <button class="btn-primary tap" id="saveNewClientBtn" style="width:100%;">Save client</button>
@@ -309,8 +319,8 @@ pages.innerHTML += `
       <option value="everyone">Everyone's schedule</option>
       <option value="Gisel">Gisel (owner) — mine only</option>
       <option value="Nayla">Nayla — hers only</option>
-      <option value="Amanda">Amanda — hers only</option>
-      <option value="IG Admin">IG Admin — theirs only</option>
+      <option value="Fida">Fida — hers only</option>
+      <option value="Falah">Falah — theirs only</option>
     </select>
   </div>
   <div class="card" style="background:linear-gradient(160deg, var(--tint) 0%, var(--surface) 140%);">
@@ -421,7 +431,7 @@ document.addEventListener('click', e => {
   const dayEl = e.target.closest('.calday');
   if (dayEl) { selectedDay = +dayEl.dataset.day; renderCalGrid(); showCalDay(); return; }
   if (e.target.closest('[data-goclient]')) return showPage('clients');
-  if (e.target.closest('[data-tagpeople]')) { alert('Tag people — pick from Gisel, Nayla, Amanda, IG Admin (owner/admin can tag anyone; nail artists can tag themselves).'); return; }
+  if (e.target.closest('[data-tagpeople]')) { alert('Tag people — pick from Gisel, Nayla, Fida, Falah (owner/admin can tag anyone; nail artists can tag themselves).'); return; }
   const rm = e.target.closest('[data-remove]');
   if (rm) {
     const idx = +rm.dataset.remove;
@@ -634,10 +644,10 @@ document.addEventListener('click', async e => {
 });
 
 // ---------- PRICING & REPORTS (owner/admin only) ----------
-const PRICING_LABELS = {owner:'Owner', nayla:'Nayla (senior)', amanda:'Amanda (junior)'};
-let PRICING = {owner:{label:'Owner',sections:[]}, nayla:{label:'Nayla (senior)',sections:[]}, amanda:{label:'Amanda (junior)',sections:[]}};
+const PRICING_LABELS = {owner:'Owner', nayla:'Nayla (senior)', fida:'Fida (junior)'};
+let PRICING = {owner:{label:'Owner',sections:[]}, nayla:{label:'Nayla (senior)',sections:[]}, fida:{label:'Fida (junior)',sections:[]}};
 function buildPricingFromRows(rows){
-  const out = {owner:{label:'Owner',sections:[]}, nayla:{label:'Nayla (senior)',sections:[]}, amanda:{label:'Amanda (junior)',sections:[]}};
+  const out = {owner:{label:'Owner',sections:[]}, nayla:{label:'Nayla (senior)',sections:[]}, fida:{label:'Fida (junior)',sections:[]}};
   rows.forEach(r => {
     if (!out[r.person]) return;
     let sec = out[r.person].sections.find(s => s.name === r.section);
@@ -656,7 +666,7 @@ pages.innerHTML += `
   <div class="row" style="gap:6px; margin-bottom:4px;">
     <button class="pill active tap" data-pricewho="owner" style="flex:1; text-align:center; font-size:11px;">Owner</button>
     <button class="pill tap" data-pricewho="nayla" style="flex:1; text-align:center; font-size:11px;">Nayla</button>
-    <button class="pill tap" data-pricewho="amanda" style="flex:1; text-align:center; font-size:11px;">Amanda</button>
+    <button class="pill tap" data-pricewho="fida" style="flex:1; text-align:center; font-size:11px;">Fida</button>
   </div>
   <div id="priceSheet"></div>
 
@@ -787,7 +797,7 @@ pages.innerHTML += `
   </div>
   <div class="card">
     <div class="row">
-      <div class="avatar">R</div>
+      <div class="avatar">N</div>
       <div style="flex:1">
         <div style="font-weight:600; font-size:14px;">Nayla</div>
         <div style="font-size:11.5px; color:var(--muted);">Senior nail artist · Tue–Fri</div>
@@ -798,20 +808,20 @@ pages.innerHTML += `
   </div>
   <div class="card">
     <div class="row">
-      <div class="avatar">D</div>
+      <div class="avatar">F</div>
       <div style="flex:1">
-        <div style="font-weight:600; font-size:14px;">Amanda</div>
-        <div style="font-size:11.5px; color:var(--muted);">Junior nail artist · Mon–Sat</div>
+        <div style="font-weight:600; font-size:14px;">Fida</div>
+        <div style="font-size:11.5px; color:var(--muted);">Junior nail artist</div>
       </div>
       <span class="tag">Editor</span>
     </div>
-    <div style="font-size:12px; color:var(--text); margin-top:8px; padding-left:50px;">Joined this year, great with 3D charms and bold color work.</div>
+    <div style="font-size:12px; color:var(--text); margin-top:8px; padding-left:50px;">Joined November 2026.</div>
   </div>
   <div class="card">
     <div class="row">
-      <div class="avatar">A</div>
+      <div class="avatar">F</div>
       <div style="flex:1">
-        <div style="font-weight:600; font-size:14px;">Instagram Admin</div>
+        <div style="font-weight:600; font-size:14px;">Falah — Admin</div>
         <div style="font-size:11.5px; color:var(--muted);">Handles chats, scheduling posts</div>
       </div>
       <span class="tag">Admin-managed</span>
@@ -829,18 +839,10 @@ pages.innerHTML += `
   </div>
   <div class="card">
     <div style="font-weight:600; font-size:13.5px; margin-bottom:2px;" data-i18n="teamPageAccess">Team & page access</div>
-    <div style="font-size:11.5px; color:var(--muted); margin-bottom:10px;">Tap a chip to cycle its access level for that page. Usernames and passwords are visible to you so you can help anyone who's locked out — tap 👁️ to reveal.</div>
+    <div style="font-size:11.5px; color:var(--muted); margin-bottom:10px;">Tap a chip to cycle its access level for that page. Passwords are encrypted, so nobody (including you) can see them. If someone forgets theirs, tap Reset and give them a new temporary password.</div>
     <div id="permMatrix"></div>
     <button class="btn-primary tap" id="addPersonBtn" style="width:100%; margin-top:12px;">+ Add person</button>
     <div id="addPersonForm"></div>
-  </div>
-  <div class="card">
-    <div style="font-weight:600; font-size:13.5px; margin-bottom:10px;" data-i18n="loginAccess">Login access</div>
-    <div class="row" style="justify-content:space-between; margin-bottom:10px;">
-      <span style="font-size:13px;">Show password on login</span>
-      <div class="toggle tap"><div class="knob"></div></div>
-    </div>
-    <div style="font-size:11.5px; color:var(--muted);">Each person you add gets their own login, linked to the calendar and the client list — their view filters automatically based on their access below.</div>
   </div>
   <div class="card">
     <div style="font-weight:600; font-size:13.5px; margin-bottom:10px;" data-i18n="theme">Theme</div>
@@ -867,7 +869,6 @@ document.addEventListener('click', e => {
 
 
 // ---------- PERMISSION MATRIX (Admin tab) ----------
-const pwVisible = {};
 function renderMatrix(){
   const el = document.getElementById('permMatrix');
   el.innerHTML = people.map((p, pi) => `
@@ -883,9 +884,8 @@ function renderMatrix(){
       </div>
       <div style="padding-left:38px; display:flex; gap:6px; align-items:center;">
         <input readonly value="${p.username}" style="font-size:11px; padding:6px 8px; flex:1;" />
-        <input readonly type="${pwVisible[pi] ? 'text' : 'password'}" value="${p.password}" style="font-size:11px; padding:6px 8px; flex:1;" />
-        <span class="tap" data-pwtoggle="${pi}" style="cursor:pointer; font-size:14px;">${pwVisible[pi] ? '🙈' : '👁️'}</span>
-        <button class="btn-ghost tap" data-resetpw="${pi}" style="font-size:10px; padding:6px 8px;">Reset</button>
+        <button class="btn-ghost tap" data-resetpw="${pi}" style="font-size:10px; padding:6px 8px;">Reset password</button>
+        ${p.locked ? '' : `<button class="btn-ghost tap" data-delperson="${pi}" style="font-size:10px; padding:6px 8px;">Remove</button>`}
       </div>
     </div>`).join('');
   el.querySelectorAll('[data-person]').forEach(btn => {
@@ -896,21 +896,22 @@ function renderMatrix(){
       await sb.from('ngd_staff').update({access: people[pi].access}).eq('id', people[pi].id);
     };
   });
-  el.querySelectorAll('[data-pwtoggle]').forEach(btn => {
-    btn.onclick = () => {
-      const pi = +btn.dataset.pwtoggle;
-      pwVisible[pi] = !pwVisible[pi];
-      renderMatrix();
-    };
-  });
   el.querySelectorAll('[data-resetpw]').forEach(btn => {
     btn.onclick = async () => {
-      const pi = +btn.dataset.resetpw;
-      const newPw = prompt(`New password for ${people[pi].name}:`, people[pi].password);
+      const p = people[+btn.dataset.resetpw];
+      const newPw = prompt(`New temporary password for ${p.name} (min. 8 characters):`);
       if (!newPw) return;
-      people[pi].password = newPw;
-      renderMatrix();
-      await sb.from('ngd_staff').update({password:newPw}).eq('id', people[pi].id);
+      const { error } = await sb.rpc('ngd_reset_staff_password', { p_staff_id: p.id, p_password: newPw });
+      alert(error ? 'Could not reset: ' + error.message : `Done. Give ${p.name} this password: ${newPw}\nThey can change it later with the 🔑 Password button.`);
+    };
+  });
+  el.querySelectorAll('[data-delperson]').forEach(btn => {
+    btn.onclick = async () => {
+      const pi = +btn.dataset.delperson, p = people[pi];
+      if (!confirm(`Remove ${p.name} from the team? Their login will stop working.`)) return;
+      const { error } = await sb.rpc('ngd_delete_staff', { p_staff_id: p.id });
+      if (error){ alert('Could not remove: ' + error.message); return; }
+      people.splice(pi, 1); renderMatrix();
     };
   });
 }
@@ -921,19 +922,20 @@ document.getElementById('addPersonBtn') && (document.getElementById('addPersonBt
     <div class="divider"></div>
     <input id="newPName" placeholder="Name" style="margin-bottom:8px;" />
     <input id="newPRole" placeholder="Role (e.g. Junior artist)" style="margin-bottom:8px;" />
-    <input id="newPUser" placeholder="Username" style="margin-bottom:8px;" />
-    <input id="newPPass" placeholder="Password" style="margin-bottom:8px;" />
+    <input id="newPUser" placeholder="Username (lowercase, e.g. fida_junior)" style="margin-bottom:8px;" autocapitalize="none" />
+    <input id="newPPass" placeholder="Temporary password (min. 8 characters)" style="margin-bottom:8px;" />
     <button class="btn-primary tap" id="savePersonBtn" style="width:100%;">Save person</button>`;
   document.getElementById('savePersonBtn').onclick = async () => {
     const name = document.getElementById('newPName').value.trim();
     const role = document.getElementById('newPRole').value.trim();
-    const username = document.getElementById('newPUser').value.trim();
+    const username = document.getElementById('newPUser').value.trim().toLowerCase();
     const password = document.getElementById('newPPass').value.trim();
     if (!name || !role || !username || !password) return;
     const access = {Clients:1, Bookings:2, Knowledge:1, 'Chit-chat':1};
-    const { data, error } = await sb.from('ngd_staff').insert({name, role, username, password, access}).select().single();
+    const { data: newId, error } = await sb.rpc('ngd_create_staff', { p_name:name, p_role:role, p_username:username, p_password:password, p_access:access });
     if (error){ alert('Could not add person: ' + error.message); return; }
-    people.push({id:data.id, name:data.name, role:data.role, locked:false, username:data.username, password:data.password, access:data.access});
+    people.push({id:newId, name, role, locked:false, username, access});
+    alert(`${name} added. Username: ${username}\nTemporary password: ${password}`);
     document.getElementById('addPersonForm').innerHTML = '';
     renderMatrix();
   };
@@ -1040,6 +1042,15 @@ function applyLang(){
 }
 document.getElementById('langToggle').onclick = () => { currentLang = currentLang==='en'?'id':'en'; applyLang(); };
 applyLang();
+
+document.getElementById('logoutBtn').onclick = async () => { await sb.auth.signOut(); location.reload(); };
+document.getElementById('changePwBtn').onclick = async () => {
+  const pw = prompt('New password (min. 8 characters):');
+  if (!pw) return;
+  if (pw.length < 8){ alert('Password must be at least 8 characters.'); return; }
+  const { error } = await sb.auth.updateUser({ password: pw });
+  alert(error ? 'Could not change password: ' + error.message : 'Password changed.');
+};
 
 } // end initApp()
 </script>
