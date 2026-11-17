@@ -215,7 +215,7 @@ function mapClientRow(r){
   return { id:r.id, name:r.name, birthday:r.birthday||'—', visits:r.visits||0, last:r.last_visit||'—', artist:r.artist||'—',
     pref:r.pref||[], rating:r.rating||5, note:r.note||'',
     sharedNote:r.shared_note || '', username:r.username||'', hasLogin:!!r.user_id, mustSetPin:!!r.must_set_pin, clientNote:r.client_note||'', birthdayRaw:r.birthday||'',
-    sensitivity:r.sensitivity||'', phone:r.phone||'', instagram:r.instagram||'', area:r.area||'', referral:r.referral||'', referralDetail:r.referral_detail||'', firstVisit:r.first_visit||'' };
+    sensitivity:r.sensitivity||'', achievements:r.achievements||{}, phone:r.phone||'', instagram:r.instagram||'', area:r.area||'', referral:r.referral||'', referralDetail:r.referral_detail||'', firstVisit:r.first_visit||'' };
 }
 function clientCardHtml(c){
   return `
@@ -1107,6 +1107,16 @@ function parsePrice(str){
 }
 
 // ---------- client card extras ----------
+const ACH_LIST = [['ig_follow','Follows & tags us on Instagram'],['share_look','Shared their nail look / experience'],['google_review','Google review with photos'],['referral','Referred a friend'],['new_design','Tried a new design / collection']];
+document.addEventListener('change', async e => {
+  const t = e.target; if (!t.dataset || !t.dataset.ach) return;
+  const c = clients.find(x => x.id === t.dataset.ach);
+  const ach = {...(c.achievements||{})};
+  if (t.checked) ach[t.dataset.key] = todayISO(); else delete ach[t.dataset.key];
+  const { error } = await sb.from('ngd_clients').update({achievements: ach}).eq('id', c.id);
+  if (error){ t.checked = !t.checked; return alert(error.message); }
+  c.achievements = ach;
+});
 function clientExtrasHtml(c){
   const mine = PRIVATE_NOTES.find(n => n.client_id === c.id && n.author_id === currentUser.id);
   const others = isOwner ? PRIVATE_NOTES.filter(n => n.client_id === c.id && n.author_id !== currentUser.id) : [];
@@ -1119,6 +1129,8 @@ function clientExtrasHtml(c){
     </div>
     <button class="btn-ghost tap" data-editdetails="${c.id}" style="font-size:10.5px; padding:6px 10px; margin-bottom:8px;">✏️ Edit details & visit count</button>
     <div id="edit-${c.id}"></div>
+    <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">🌱 Support our growth — tick what this client has done (shows on their page)</div>
+    <div style="display:grid; gap:4px; margin-bottom:10px;">${ACH_LIST.map(([k,l]) => `<label class="row" style="gap:8px; font-size:12px;"><input type="checkbox" style="width:auto;" data-ach="${c.id}" data-key="${k}" ${c.achievements[k] ? 'checked' : ''}/> ${l}${c.achievements[k] ? ` <span style="color:var(--muted); font-size:10px;">(${esc(c.achievements[k])})</span>` : ''}</label>`).join('')}</div>
     <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">👤 Client website account</div>
     ${c.hasLogin ? `
       <div style="font-size:12.5px;">Username: <b>${esc(c.username)}</b> ${c.mustSetPin ? '<span class="tag">waiting for client to set PIN</span>' : '<span class="tag">active</span>'} <span class="tap" data-renamelogin="${c.id}" style="cursor:pointer; font-size:11px; color:var(--muted); text-decoration:underline;">edit</span></div>
@@ -1662,7 +1674,7 @@ async function loadChat(){
     <div style="font-size:10px; color:var(--muted);">${new Date(x.created_at).toLocaleString('id-ID')}</div>
     <div style="font-size:13px; margin-top:6px; white-space:pre-wrap;">${esc(x.body)}</div>
     <span class="tap" data-likepost="${x.id}" style="cursor:pointer; font-size:13px; color:${x.liked_by ? '#B0566A' : 'var(--muted)'};">${x.liked_by ? '♥ ' + esc(x.liked_by) : '♡ Like'}</span>
-    ${x.allow_public ? (isOwner ? `<span class="tap" data-feature="${x.id}" data-on="${x.featured ? 0 : 1}" style="cursor:pointer; font-size:11px; margin-left:12px; color:${x.featured ? '#B0566A' : 'var(--muted)'};">${x.featured ? '★ On Love Notes wall — tap to remove' : '☆ Show on Love Notes wall'}</span>` : `<span style="font-size:10.5px; color:var(--muted); margin-left:12px;">${x.featured ? '★ on Love Notes wall' : 'client allows Love Notes'}</span>`) : ''}
+    ${x.allow_public ? (isOwner ? `<span class="tap" data-feature="${x.id}" data-on="${x.featured ? 0 : 1}" style="cursor:pointer; font-size:11px; margin-left:12px; color:${x.featured ? '#B0566A' : 'var(--muted)'};">${x.featured ? '★ On Love Notes wall — tap to remove' : '☆ Show on Love Notes wall'}${x.public_anonymous ? ' (as Anonymous)' : ''}</span>` : `<span style="font-size:10.5px; color:var(--muted); margin-left:12px;">${x.featured ? '★ on Love Notes wall' : 'client allows Love Notes'}</span>`) : ''}
     ${REPLIES.filter(y => y.post_id === x.id).map(y => `<div style="margin:8px 0 0 ${y.from_client ? 0 : 18}px; background:${y.from_client ? 'var(--surface)' : 'var(--tint)'}; border:1px solid var(--hairline); border-radius:12px; padding:8px 10px; font-size:12.5px;">
       <div style="font-size:10px; color:var(--muted);">${esc(y.author_name)}${y.liked && !y.from_client ? ' · ♥ liked by client' : ''}</div>${esc(y.body)}</div>`).join('')}
     <div class="row" style="gap:6px; margin-top:8px;"><input id="crep-${x.id}" placeholder="Reply as ${esc(currentUser.name)}…" style="flex:1;" /><button class="btn-primary tap" data-chatreply="${x.id}" style="font-size:11px; padding:8px 12px;">Reply</button></div>
