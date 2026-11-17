@@ -83,7 +83,8 @@
 // ---------- SUPABASE ----------
 const SUPABASE_URL = 'https://avetybynptepfqmxedfj.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2ZXR5YnlucHRlcGZxbXhlZGZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3NTA4NjEsImV4cCI6MjEwMzMyNjg2MX0.PPvK1EnSfV0QDE-OkoEpD7WhgU3CM048IL5YLypCtHc';
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// separate login storage from the client website (both live on ngnailart-creator.github.io)
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { storageKey: 'ngd-dashboard-auth', persistSession: true } });
 
 // ---------- STAFF / LOGIN ----------
 const LEVELS = ['None', 'View', 'Edit'];
