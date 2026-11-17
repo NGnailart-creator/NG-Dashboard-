@@ -216,7 +216,7 @@ function mapClientRow(r){
   return { id:r.id, name:r.name, birthday:r.birthday||'—', visits:r.visits||0, last:r.last_visit||'—', artist:r.artist||'—',
     pref:r.pref||[], rating:r.rating||5, note:r.note||'',
     sharedNote:r.shared_note || '', username:r.username||'', hasLogin:!!r.user_id, mustSetPin:!!r.must_set_pin, clientNote:r.client_note||'', birthdayRaw:r.birthday||'',
-    sensitivity:r.sensitivity||'', achievements:r.achievements||{}, achReq:r.ach_requests||{}, phone:r.phone||'', instagram:r.instagram||'', area:r.area||'', referral:r.referral||'', referralDetail:r.referral_detail||'', firstVisit:r.first_visit||'' };
+    sensitivity:r.sensitivity||'', achievements:r.achievements||{}, achReq:r.ach_requests||{}, savedRewards:r.saved_rewards||[], phone:r.phone||'', instagram:r.instagram||'', area:r.area||'', referral:r.referral||'', referralDetail:r.referral_detail||'', firstVisit:r.first_visit||'' };
 }
 function clientCardHtml(c){
   return `
@@ -227,6 +227,7 @@ function clientCardHtml(c){
         <div style="font-family:Montserrat,sans-serif; font-weight:600; font-size:15.5px;">${c.name}</div>
         <div style="font-size:11.5px; color:var(--muted);">Last visit ${c.last} · main artist ${esc(c.artist)}</div>
         ${artistCountLine(c)}
+        ${(c.savedRewards||[]).filter(r => r.use_by > c.visits).map(r => `<div style="font-size:11px; color:#8A2D1F; margin-top:2px;">🎁 Saved reward: ${esc(rewardName(r.cycle))} · use by visit ${r.use_by}</div>`).join('')}
       </div>
       <div class="tag">${c.visits} visits</div>
     </div>
@@ -269,6 +270,24 @@ const isOwnerOrAdmin = currentUser.role === 'Owner' || currentUser.role === 'Adm
 document.getElementById('loggedInAsLine').innerHTML = isOwnerOrAdmin
   ? `<b>${currentUser.name}</b> — ${currentUser.role} · sees every client automatically, no switching needed`
   : `<b>${currentUser.name}</b> — ${currentUser.role} · only your own clients show here automatically`;
+function rewardPicker(c, nextVisit, cycle){
+  const opts = [];
+  (c ? c.savedRewards||[] : []).filter(r => r.use_by >= nextVisit).sort((a,b) => a.use_by - b.use_by)
+    .forEach(r => opts.push({from:'saved', cycle:r.cycle, earned_visit:r.earned_visit, use_by:r.use_by}));
+  if (LOYALTY[cycle]) opts.push({from:'now', cycle});
+  window._tfReward = { opts, earned: LOYALTY[cycle] ? {cycle, label: rewardName(cycle)} : null, nextVisit };
+  if (!opts.length) return '';
+  const line = (o, i) => `<label class="row" style="gap:8px; align-items:flex-start; font-size:12px; color:var(--text); margin-top:6px;">
+      <input type="radio" name="tfRw" value="${i}" style="width:auto; margin-top:2px;" ${i===0?'checked':''}/>
+      <span><b>${esc(rewardName(o.cycle))}</b> ${o.from==='now' ? '<span style="color:var(--muted);">— earned today</span>' : `<span style="color:var(--muted);">— saved, use by visit ${o.use_by}</span>`}
+      <span class="rwNote" data-i="${i}" style="display:block; font-size:10.5px; color:var(--muted);"></span></span></label>`;
+  return `<div style="margin-top:8px; padding:10px 12px; border:1px solid var(--line); border-radius:12px; background:var(--white);">
+    <div style="font-size:11px; font-weight:600; color:var(--text);">🎁 Loyalty reward — max 1 per visit</div>
+    ${opts.map(line).join('')}
+    <label class="row" style="gap:8px; font-size:12px; color:var(--text); margin-top:6px;"><input type="radio" name="tfRw" value="none" style="width:auto;"/> No reward this visit</label>
+    <div style="font-size:10.5px; color:var(--muted); margin-top:6px;">A reward not used today can be used within the next 2 visits. Rewards can't be combined in one visit.</div></div>`;
+}
+const rewardName = cyc => LOYALTY[cyc] ? LOYALTY[cyc].replace(/^Loyalty visit \d+/, 'Stamp ' + cyc) : 'Stamp ' + cyc;
 let ARTIST_COUNTS = {};
 async function loadArtistCounts(){
   const { data } = await sb.from('ngd_treatments').select('client_id,artist_name').neq('status','cancelled');
@@ -1365,15 +1384,18 @@ function openTreatmentForm(clientId){
     const sheet = (PRICING[key]||{sections:[]}).sections.flatMap(sec => sec.items.map(it => ({label: it.label.replace(' ★FAV',''), price: it.price, sec: sec.name})));
     let past = [];
     const cid = document.getElementById('tfClient').value;
+    window._tfReward = null;
+    if (!cid) document.getElementById('tfLoyalty').innerHTML = '';
     if (cid){
       const { data } = await sb.from('ngd_treatments').select('items').eq('client_id', cid).order('created_at',{ascending:false}).limit(10);
       past = [...new Set((data||[]).flatMap(t => (t.items||[]).map(i => i.label)))];
       const c = clients.find(x => x.id === cid);
       const nextVisit = (c ? c.visits : 0) + 1;
       const cycle = ((nextVisit - 1) % 10) + 1;
-      document.getElementById('tfLoyalty').innerHTML = (c && c.sensitivity ? `<div style="background:#FBE9E7; color:#8A2D1F; border-radius:10px; padding:8px 10px; margin-bottom:6px;"><b>⚠️ Allergy / sensitivity:</b> ${esc(c.sensitivity)}</div>` : '') + `This will be visit <b>${nextVisit}</b> (stamp ${cycle} of 10).` + (LOYALTY[cycle] ? ` 🎁 <b>${LOYALTY[cycle].replace(/visit \d+/, 'stamp ' + cycle)}</b> <button class="btn-ghost tap" id="tfUseReward" data-cycle="${cycle}" style="font-size:10.5px; padding:4px 10px; margin-top:4px;">Use this reward as the discount</button>` : '');
+      document.getElementById('tfLoyalty').innerHTML = (c && c.sensitivity ? `<div style="background:#FBE9E7; color:#8A2D1F; border-radius:10px; padding:8px 10px; margin-bottom:6px;"><b>⚠️ Allergy / sensitivity:</b> ${esc(c.sensitivity)}</div>` : '') + `This will be visit <b>${nextVisit}</b> (stamp ${cycle} of 10).` + rewardPicker(c, nextVisit, cycle);
     }
     window._tfSheet = sheet;
+    if (window._tfApplyReward) window._tfApplyReward();
     document.getElementById('tfItemsList').innerHTML =
       past.map(l => `<option value="${esc(l)}">⟲ ordered before</option>`).join('') +
       sheet.filter(s => !past.includes(s.label)).map(s => `<option value="${esc(s.label)}">${esc(s.sec)} · ${esc(s.price)}</option>`).join('');
@@ -1394,20 +1416,26 @@ function openTreatmentForm(clientId){
       const hit = (window._tfSheet||[]).find(s => s.label === e.target.value);
       if (hit){ e.target.closest('.tfRow').querySelector('.tfUnit').value = parsePrice(hit.price); }
     }
+    if (e.target.closest('.tfRow') && document.getElementById('tfDiscLabel').dataset.auto) applyReward(true);
     recalc();
   });
   box.addEventListener('click', e => {
     if (e.target.classList.contains('tfDel')){ e.target.closest('.tfRow').remove(); recalc(); }
-    if (e.target.id === 'tfUseReward'){
-      const cyc = +e.target.dataset.cycle;
-      document.getElementById('tfDiscLabel').value = LOYALTY[cyc].replace(/visit \d+/, 'stamp ' + cyc).replace(/^Loyalty/, 'Loyalty');
-      let sub = 0; rows.querySelectorAll('.tfRow').forEach(r => { sub += (+r.querySelector('.tfQty').value||0) * (+r.querySelector('.tfUnit').value||0); });
-      const d = document.getElementById('tfDisc');
-      if (cyc === 8) d.value = Math.round(sub * 0.15);
-      else { d.value = ''; d.focus(); alert('Label filled in. Now type the amount in rupiah (e.g. the price of the free designs).'); }
-      recalc();
-    }
   });
+  const applyReward = (fromItems) => {
+    const R = window._tfReward; const sel = box.querySelector('input[name="tfRw"]:checked'); if (!R || !R.opts.length || !sel) return;
+    const pick = sel.value === 'none' ? null : R.opts[+sel.value];
+    box.querySelectorAll('.rwNote').forEach(n => { const o = R.opts[+n.dataset.i];
+      n.textContent = o === pick ? '✓ Used today' : o.from === 'now' ? `Will be saved — can be used until visit ${R.nextVisit + 2}` : o.use_by === R.nextVisit ? '⚠️ Last chance — expires if not used today' : `Still saved until visit ${o.use_by}`; });
+    const lab = document.getElementById('tfDiscLabel'), amt = document.getElementById('tfDisc');
+    if (!pick){ if (lab.dataset.auto){ lab.value=''; amt.value=''; delete lab.dataset.auto; } recalc(); return; }
+    lab.value = 'Loyalty ' + rewardName(pick.cycle).replace(/^Stamp/, 'stamp'); lab.dataset.auto = '1';
+    let sub = 0; rows.querySelectorAll('.tfRow').forEach(r => { sub += (+r.querySelector('.tfQty').value||0) * (+r.querySelector('.tfUnit').value||0); });
+    if (pick.cycle === 8) amt.value = Math.round(sub * 0.15); else if (!fromItems) amt.value = '';
+    recalc();
+  };
+  box.addEventListener('change', e => { if (e.target.name === 'tfRw'){ applyReward(); const R = window._tfReward, v = e.target.value; if (v !== 'none' && R.opts[+v].cycle !== 8) document.getElementById('tfDisc').focus(); } });
+  window._tfApplyReward = applyReward;
   let couponTimer;
   document.getElementById('tfCoupon').addEventListener('input', e => {
     clearTimeout(couponTimer);
@@ -1435,7 +1463,11 @@ function openTreatmentForm(clientId){
     const artist = people.find(p => p.name === artistName);
     const payload = { client_id, treatment_date: document.getElementById('tfDate').value || todayISO(), artist_id: artist ? artist.id : null, artist_name: artistName,
       items, discount_label: document.getElementById('tfDiscLabel').value.trim() || null, discount_amount: +document.getElementById('tfDisc').value || 0,
-      total: recalc(), note: document.getElementById('tfNote').value.trim() || null, created_by: currentUser.id };
+      total: recalc(), note: document.getElementById('tfNote').value.trim() || null, created_by: currentUser.id, reward: (() => {
+        const R = window._tfReward; if (!R || !R.opts.length) return null;
+        const sel = box.querySelector('input[name="tfRw"]:checked'); const pick = sel && sel.value !== 'none' ? R.opts[+sel.value] : null;
+        return { earned: R.earned, use: pick ? (pick.from === 'now' ? {from:'now', cycle:pick.cycle} : {from:'saved', cycle:pick.cycle, earned_visit:pick.earned_visit}) : null };
+      })() };
     const btn = document.getElementById('tfSave'); btn.disabled = true; btn.textContent = 'Saving…';
     const { data, error } = await sb.from('ngd_treatments').insert(payload).select().single();
     btn.disabled = false; btn.textContent = 'Save treatment';
