@@ -189,20 +189,20 @@ const pages = document.getElementById('pages');
 pages.insertAdjacentHTML('beforeend', `
 <div class="pagesec section-hidden" id="page-home">
   <div class="card">
-    <div class="eyebrow" data-i18n="today">Today</div>
-    <div class="title" data-i18n="goodMorning">Good morning, Gisel</div>
-    <div style="font-size:10.5px; color:var(--muted); margin-top:4px;" data-i18n="homeDefaultNote">Home is set as your default page — it opens here automatically when you log in.</div>
+    <div class="eyebrow" id="homeDate">Today</div>
+    <div class="title" id="homeGreet">Hello</div>
     <div class="row" style="margin-top:12px; gap:8px;">
-      <div class="stat"><div class="num">3</div><div class="label">Bookings today</div></div>
+      <div class="stat"><div class="num" id="homeToday">–</div><div class="label" id="homeTodayLbl">Bookings today</div></div>
+      <div class="stat" id="homeReqBox" style="cursor:pointer;"><div class="num" id="homeReq">–</div><div class="label" id="homeReqLbl">Waiting for approval</div></div>
     </div>
+    <div id="homeTodayList" style="margin-top:10px;"></div>
   </div>
   <div class="card">
     <div class="row" style="justify-content:space-between;">
       <div class="eyebrow" data-i18n="announcements">Announcements</div>
-      <button class="btn-ghost tap" style="font-size:10.5px; padding:5px 10px;" data-i18n="addOwnerOnly">+ Add (owner only)</button>
+      <button class="btn-ghost tap" id="annAddBtn" style="font-size:10.5px; padding:5px 10px; display:none;" data-i18n="addOwnerOnly">+ Add (owner only)</button>
     </div>
-    <div class="title" style="font-size:15px; margin-top:4px;">New Canva schedule template uploaded</div>
-    <div style="font-size:12.5px; color:var(--muted); margin-top:4px;">Posted by Gisel — use this for October's schedule graphic.</div>
+    <div id="annList" style="margin-top:4px;"><div style="font-size:12px; color:var(--muted);">Loading…</div></div>
   </div>
   <div class="card">
     <div class="eyebrow" data-i18n="upcomingBirthdays">Upcoming birthdays</div>
@@ -1934,7 +1934,7 @@ async function loadAppts(){
   const { data } = await sb.from('ngd_appointments').select('*').gte('appt_date', todayISO()).order('appt_date').order('start_min');
   const now = new Date();
   APPTS = (data||[]).map(a => (a.status === 'awaiting_dp' && a.hold_until && new Date(a.hold_until) <= now) ? {...a, status:'expired'} : a);
-  renderBkRequests(); renderBkUpcoming();
+  renderBkRequests(); renderBkUpcoming(); if (document.getElementById('homeGreet')) renderHome();
   const pend = APPTS.filter(a => canManageAppt(a) && (a.status === 'awaiting_approval' || a.status === 'awaiting_dp')).length;
   const nb = document.querySelector('.navbtn[data-key="calendar"]');
   if (nb){ let d = nb.querySelector('.navdot'); if (pend && !d){ nb.insertAdjacentHTML('beforeend', '<span class="navdot" style="position:absolute; top:6px; right:10px; width:7px; height:7px; border-radius:50%; background:#B0566A;"></span>'); nb.style.position='relative'; } if (!pend && d) d.remove(); }
@@ -2233,7 +2233,43 @@ if (document.getElementById('page-website')){
   };
 }
 
-loadBookCfg(); loadAppts(); renderBkDay(); loadNotifs();
+// ---- home: greeting, today's bookings, team announcements
+function renderHome(){
+  const id = currentLang === 'id', h = new Date().getHours();
+  const greet = id ? (h < 11 ? 'Selamat pagi' : h < 15 ? 'Selamat siang' : h < 18 ? 'Selamat sore' : 'Selamat malam') : (h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening');
+  document.getElementById('homeGreet').textContent = `${greet}, ${currentUser.name}`;
+  document.getElementById('homeDate').textContent = new Date().toLocaleDateString(id ? 'id-ID' : 'en-GB', {weekday:'long', day:'numeric', month:'long'});
+  const t = todayISO(), mine = a => isOwnerOrAdmin || a.artist_id === currentUser.id;
+  const today = APPTS.filter(a => a.appt_date === t && mine(a) && ['confirmed','awaiting_approval','awaiting_dp'].includes(a.status)).sort((x,y) => x.start_min - y.start_min);
+  const req = APPTS.filter(a => mine(a) && (a.status === 'awaiting_approval' || a.status === 'awaiting_dp')).length;
+  document.getElementById('homeToday').textContent = today.length;
+  document.getElementById('homeReq').textContent = req;
+  document.getElementById('homeTodayLbl').textContent = id ? 'Booking hari ini' : 'Bookings today';
+  document.getElementById('homeReqLbl').textContent = id ? 'Menunggu approve' : 'Waiting for approval';
+  document.getElementById('homeTodayList').innerHTML = today.map(a => `<div style="border-top:1px solid var(--hairline); padding:7px 0; font-size:12px;"><b style="font-weight:600;">${minToHM(a.start_min)}</b> · ${esc(a.client_name||'—')}${isOwnerOrAdmin ? ` · <span style="color:var(--muted);">${esc(a.artist_name||'')}</span>` : ''}<div style="font-size:11px; color:var(--muted);">${esc(a.summary||'')}${a.status !== 'confirmed' ? ' · ' + BK_ST[a.status] : ''}</div></div>`).join('');
+}
+document.getElementById('homeReqBox').onclick = () => showPage('calendar');
+async function loadAnnouncements(){
+  const { data } = await sb.from('ngd_team_announcements').select('*').order('created_at', {ascending:false}).limit(5);
+  const el = document.getElementById('annList');
+  el.innerHTML = (data||[]).length ? data.map(a => `<div style="border-top:1px solid var(--hairline); padding:8px 0;">
+    <div class="row" style="justify-content:space-between; align-items:flex-start;"><div class="title" style="font-size:14px;">${esc(a.title)}</div>${isOwner ? `<span class="tap" data-anndel="${a.id}" style="cursor:pointer; color:var(--muted); font-size:12px;">✕</span>` : ''}</div>
+    ${a.body ? `<div style="font-size:12.5px; color:var(--muted); margin-top:3px; white-space:pre-wrap;">${esc(a.body)}</div>` : ''}
+    <div style="font-size:10px; color:var(--muted); margin-top:3px;">${esc(a.created_by_name||'')} · ${new Date(a.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</div></div>`).join('')
+    : `<div style="font-size:12px; color:var(--muted);">${currentLang === 'id' ? 'Belum ada pengumuman.' : 'No announcements yet.'}</div>`;
+}
+if (isOwner) document.getElementById('annAddBtn').style.display = '';
+document.getElementById('annAddBtn').onclick = async () => {
+  const title = prompt('Announcement title (for the team):'); if (!title || !title.trim()) return;
+  const body = prompt('Details (optional):') || '';
+  const { error } = await sb.from('ngd_team_announcements').insert({ title: title.trim(), body: body.trim() || null, created_by: currentUser.id, created_by_name: currentUser.name });
+  if (error) return alert(error.message); loadAnnouncements();
+};
+document.addEventListener('click', async e => { const d = e.target.closest('[data-anndel]'); if (!d) return;
+  if (!confirm('Delete this announcement?')) return; const { error } = await sb.from('ngd_team_announcements').delete().eq('id', d.dataset.anndel); if (error) return alert(error.message); loadAnnouncements(); });
+document.getElementById('langToggle').addEventListener('click', () => { renderHome(); loadAnnouncements(); });
+loadAnnouncements();
+loadBookCfg(); loadAppts().then(renderHome); renderHome(); renderBkDay(); loadNotifs();
 setInterval(() => { loadNotifs(); loadAppts(); }, 60000);
 
 document.getElementById('logoutBtn').onclick = async () => { await sb.auth.signOut(); location.reload(); };
