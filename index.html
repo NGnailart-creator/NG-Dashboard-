@@ -216,7 +216,7 @@ function mapClientRow(r){
   return { id:r.id, name:r.name, birthday:r.birthday||'—', visits:r.visits||0, last:r.last_visit||'—', artist:r.artist||'—',
     pref:r.pref||[], rating:r.rating||5, note:r.note||'',
     sharedNote:r.shared_note || '', username:r.username||'', hasLogin:!!r.user_id, mustSetPin:!!r.must_set_pin, clientNote:r.client_note||'', birthdayRaw:r.birthday||'',
-    sensitivity:r.sensitivity||'', achievements:r.achievements||{}, achReq:r.ach_requests||{}, photo:r.photo_path||null, savedRewards:r.saved_rewards||[], phone:r.phone||'', instagram:r.instagram||'', area:r.area||'', referral:r.referral||'', referralDetail:r.referral_detail||'', firstVisit:r.first_visit||'' };
+    sensitivity:r.sensitivity||'', clientAllergy:r.client_allergy||'', achievements:r.achievements||{}, achReq:r.ach_requests||{}, photo:r.photo_path||null, savedRewards:r.saved_rewards||[], phone:r.phone||'', instagram:r.instagram||'', area:r.area||'', referral:r.referral||'', referralDetail:r.referral_detail||'', firstVisit:r.first_visit||'' };
 }
 let CLIENT_PHOTO_URLS = {};
 async function loadClientPhotos(){
@@ -1145,6 +1145,7 @@ function clientExtrasHtml(c){
   return `
     <div class="divider"></div>
     ${c.sensitivity ? `<div style="font-size:12px; background:#FBE9E7; color:#8A2D1F; border-radius:10px; padding:8px 10px; margin-bottom:8px;"><b>⚠️ Allergy / sensitivity:</b> ${esc(c.sensitivity)}</div>` : ''}
+    ${c.clientAllergy ? `<div style="font-size:12px; background:#FBE9E7; color:#8A2D1F; border-radius:10px; padding:8px 10px; margin-bottom:8px;"><b>⚠️ Client says (allergy / sensitive skin):</b> ${esc(c.clientAllergy)}</div>` : ''}
     <div style="font-size:11.5px; line-height:1.7; margin-bottom:8px;">
       ${c.phone ? `📱 ${esc(c.phone)}<br>` : ''}${c.instagram ? `📷 ${esc(c.instagram)}<br>` : ''}${c.area ? `📍 ${esc(c.area)}<br>` : ''}${c.referral ? `🔎 Found us via ${esc(c.referral)}${c.referralDetail ? ' — ' + esc(c.referralDetail) : ''}<br>` : ''}${c.firstVisit ? `🗓 First visit ${esc(c.firstVisit)}` : ''}
     </div>
@@ -1367,7 +1368,7 @@ function openTreatmentForm(clientId){
       const c = clients.find(x => x.id === cid);
       const nextVisit = (c ? c.visits : 0) + 1;
       const cycle = ((nextVisit - 1) % 10) + 1;
-      document.getElementById('tfLoyalty').innerHTML = (c && c.sensitivity ? `<div style="background:#FBE9E7; color:#8A2D1F; border-radius:10px; padding:8px 10px; margin-bottom:6px;"><b>⚠️ Allergy / sensitivity:</b> ${esc(c.sensitivity)}</div>` : '') + `This will be visit <b>${nextVisit}</b> (stamp ${cycle} of 10).` + rewardPicker(c, nextVisit, cycle);
+      document.getElementById('tfLoyalty').innerHTML = (c && c.sensitivity ? `<div style="background:#FBE9E7; color:#8A2D1F; border-radius:10px; padding:8px 10px; margin-bottom:6px;"><b>⚠️ Allergy / sensitivity:</b> ${esc(c.sensitivity)}</div>` : '') + (c && c.clientAllergy ? `<div style="background:#FBE9E7; color:#8A2D1F; border-radius:10px; padding:8px 10px; margin-bottom:6px;"><b>⚠️ Client says:</b> ${esc(c.clientAllergy)}</div>` : '') + `This will be visit <b>${nextVisit}</b> (stamp ${cycle} of 10).` + rewardPicker(c, nextVisit, cycle);
     }
     window._tfSheet = sheet;
     if (window._tfApplyReward) window._tfApplyReward();
