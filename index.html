@@ -154,7 +154,13 @@ const TABS = [
   {key:'calendar', label:'Bookings', icon:'📅'},
   {key:'knowledge', label:'Knowledge', icon:'📚'},
   {key:'chitchat', label:'Chit-chat', icon:'💬'},
+  {key:'treat', label:'Treatments', icon:'🧾'},
+  {key:'colors', label:'Colors', icon:'🎨'},
   {key:'team', label:'Team', icon:'👥'},
+  {key:'website', label:'Website', icon:'🌐', roles:['Owner','Admin']},
+  {key:'messages', label:'Messages', icon:'💌', roles:['Owner']},
+  {key:'feedback', label:'Feedback', icon:'📮', roles:['Owner']},
+  {key:'activity', label:'Activity', icon:'🕘', roles:['Owner']},
   {key:'pricing', label:'Pricing', icon:'💰', roles:['Owner','Admin']},
   {key:'admin', label:'Admin', icon:'🛡️', roles:['Owner']}
 ];
@@ -178,7 +184,7 @@ function showPage(key){
 const pages = document.getElementById('pages');
 
 // ---------- HOME ----------
-pages.innerHTML += `
+pages.insertAdjacentHTML('beforeend', `
 <div class="pagesec section-hidden" id="page-home">
   <div class="card">
     <div class="eyebrow" data-i18n="today">Today</div>
@@ -200,14 +206,14 @@ pages.innerHTML += `
     <div class="eyebrow" data-i18n="upcomingBirthdays">Upcoming birthdays</div>
     <div id="homeBirthdays" style="font-size:13px; margin-top:6px; color:var(--muted);">Loading...</div>
   </div>
-</div>`;
+</div>`);
 
 // ---------- CLIENTS ----------
 let clients = []; // loaded from ngd_clients
 function mapClientRow(r){
   return { id:r.id, name:r.name, birthday:r.birthday||'—', visits:r.visits||0, last:r.last_visit||'—', artist:r.artist||'—',
-    pref:r.pref||[], rating:r.rating||5, note:r.note||'', privateNote:r.private_note ? `Written by ${r.private_note_author}: ${r.private_note}` : 'No private note yet.',
-    sharedNote:r.shared_note || 'No shared note yet.' };
+    pref:r.pref||[], rating:r.rating||5, note:r.note||'',
+    sharedNote:r.shared_note || '', username:r.username||'', hasLogin:!!r.user_id, mustSetPin:!!r.must_set_pin, clientNote:r.client_note||'', birthdayRaw:r.birthday||'' };
 }
 function clientCardHtml(c){
   return `
@@ -227,20 +233,15 @@ function clientCardHtml(c){
     <div style="font-size:12.5px; color:var(--text); line-height:1.5;">${c.note}</div>
     <div class="row" style="margin-top:10px; justify-content:space-between;">
       <div style="font-family:Montserrat,sans-serif; font-size:12px; color:var(--accent);">${'★'.repeat(c.rating)}${'☆'.repeat(5-c.rating)}</div>
-      <button class="btn-ghost tap" style="font-size:11px; padding:6px 10px;">View visit history</button>
+      <button class="btn-ghost tap" data-history="${c.id}" style="font-size:11px; padding:6px 10px;">View visit history</button>
     </div>
-    <div style="font-size:10.5px; color:var(--muted); margin-top:8px;">🎂 ${c.birthday} · visits logged only by owner/admin</div>
+    <div id="hist-${c.id}"></div>
+    <div style="font-size:10.5px; color:var(--muted); margin-top:8px;">🎂 ${c.birthday} · visits count when the owner/admin confirms a treatment</div>
     <div class="divider"></div>
-    ${(currentUser.role==='Owner' || c.privateNote.includes('by '+currentUser.name)) ? `
-    <div class="row" style="justify-content:space-between; margin-bottom:6px;">
-      <span style="font-size:11px; color:var(--muted);">🔒 Private note — visible to writer + owner only</span>
-    </div>
-    <div style="font-size:12px; color:var(--text); background:var(--tint); border-radius:10px; padding:8px 10px; margin-bottom:10px;">${c.privateNote}</div>` : ''}
-    <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">📌 Shared note — anyone on the team can add or see this</div>
-    <div style="font-size:12px; color:var(--text); background:var(--surface); border:1px solid var(--hairline); border-radius:10px; padding:8px 10px;">${c.sharedNote}</div>
+    ${clientExtrasHtml(c)}
   </div>`;
 }
-pages.innerHTML += `
+pages.insertAdjacentHTML('beforeend', `
 <div class="pagesec" id="page-clients">
   <div class="card">
     <div class="eyebrow" data-i18n="loggedInAs">Logged in as</div>
@@ -259,7 +260,7 @@ pages.innerHTML += `
     <button class="btn-primary tap" id="addClientBtn" style="width:100%;">+ Add client</button>
     <div id="addClientForm"></div>
   </div>
-</div>`;
+</div>`);
 const isOwnerOrAdmin = currentUser.role === 'Owner' || currentUser.role === 'Admin';
 document.getElementById('loggedInAsLine').innerHTML = isOwnerOrAdmin
   ? `<b>${currentUser.name}</b> — ${currentUser.role} · sees every client automatically, no switching needed`
@@ -277,7 +278,8 @@ document.getElementById('addClientBtn').onclick = () => {
     <div class="divider"></div>
     <div style="display:grid; gap:8px;">
       <input id="newClientName" placeholder="Client name" />
-      <input id="newClientBirthday" placeholder="Birthday (e.g. Mar 14)" />
+      <label style="font-size:10.5px; color:var(--muted);">Birthday (for automatic birthday messages)</label>
+      <input id="newClientBirthday" type="date" />
       <input id="newClientArtist" placeholder="Nail artist (e.g. Nayla (senior))" value="${currentUser.role==='Owner'||currentUser.role==='Admin' ? '' : currentUser.name}" />
       <input id="newClientPref" placeholder="Style preferences, comma separated" />
       <textarea id="newClientNote" placeholder="Notes" style="min-height:50px;"></textarea>
@@ -292,7 +294,7 @@ document.getElementById('addClientBtn').onclick = () => {
       artist: document.getElementById('newClientArtist').value.trim(),
       pref: document.getElementById('newClientPref').value.split(',').map(s=>s.trim()).filter(Boolean),
       rating: 5, note: document.getElementById('newClientNote').value.trim(),
-      private_note: '', private_note_author: '', shared_note: '', visits: 0, last_visit: ''
+      shared_note: '', visits: 0, last_visit: '', created_by: currentUser.id
     };
     const { data, error } = await sb.from('ngd_clients').insert(payload).select().single();
     if (error){ alert('Could not save client: ' + error.message); return; }
@@ -305,7 +307,7 @@ document.getElementById('addClientBtn').onclick = () => {
 
 
 // ---------- CALENDAR ----------
-pages.innerHTML += `
+pages.insertAdjacentHTML('beforeend', `
 <div class="pagesec section-hidden" id="page-calendar">
   <div class="card">
     <div class="eyebrow" data-i18n="thisWeek">This week</div>
@@ -346,7 +348,7 @@ pages.innerHTML += `
     <div style="font-size:11.5px; color:var(--muted); background:var(--tint); border-radius:10px; padding:8px 10px;">⚠️ This only <b>reads</b> your Google Calendar. It never edits, deletes, or adds anything on your actual Google Calendar — nothing here can change it in any way.</div>
     <button class="btn-ghost tap" style="width:100%; margin-top:10px;" data-i18n="connectGoogleCalendar">Connect Google Calendar</button>
   </div>
-</div>`;
+</div>`);
 
 // ---------- CALENDAR GRID ----------
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -495,7 +497,7 @@ document.addEventListener('click', e => {
 document.getElementById('calWhoFilter').onchange = e => { calWho = e.target.value; renderCalGrid(); showCalDay(); };
 
 // ---------- KNOWLEDGE BASE ----------
-pages.innerHTML += `
+pages.insertAdjacentHTML('beforeend', `
 <div class="pagesec section-hidden" id="page-knowledge">
   <div class="card">
     <div class="eyebrow" data-i18n="adminKnowledgeBase">Admin knowledge base</div>
@@ -518,7 +520,7 @@ pages.innerHTML += `
   </div>
   <div id="guidanceResults"></div>
   ${isOwnerOrAdmin ? `<button class="btn-ghost tap" id="addGuidanceBtn" style="width:100%;">+ Add guidance</button><div id="addGuidanceForm"></div>` : ''}
-</div>`;
+</div>`);
 
 let KB_ITEMS = []; // loaded from ngd_kb_items
 let GUIDANCE_ITEMS = []; // loaded from ngd_guidance
@@ -602,7 +604,7 @@ if (isOwnerOrAdmin){
 }
 
 // ---------- CHIT-CHAT ----------
-pages.innerHTML += `
+pages.insertAdjacentHTML('beforeend', `
 <div class="pagesec section-hidden" id="page-chitchat">
   <div class="card">
     <div class="eyebrow" data-i18n="teamActivity">Team activity</div>
@@ -614,7 +616,7 @@ pages.innerHTML += `
     <button class="btn-primary tap" id="chitPostBtn" style="margin-top:8px;" data-i18n="post">Post</button>
   </div>
   <div id="chitResults"></div>
-</div>`;
+</div>`);
 let CHITCHAT_POSTS = []; // loaded from ngd_chitchat
 function renderChitchat(){
   document.getElementById('chitResults').innerHTML = CHITCHAT_POSTS.length ? CHITCHAT_POSTS.map(p => `
@@ -660,7 +662,7 @@ function buildPricingFromRows(rows){
   });
   return out;
 }
-pages.innerHTML += `
+pages.insertAdjacentHTML('beforeend', `
 <div class="pagesec section-hidden" id="page-pricing">
   <div class="card">
     <div class="eyebrow" data-i18n="ownerAdminOnly">Owner & Admin only</div>
@@ -697,7 +699,7 @@ pages.innerHTML += `
     <div style="font-size:11px; color:var(--muted); margin-bottom:10px;">Auto-generated on the last day of each month — per artist, split into hand nail art, feet nail art/callus removal, and press-on nails.</div>
     <div id="monthlySummary"></div>
   </div>
-</div>`;
+</div>`);
 
 function canEditPrices(who){
   if (currentUser.role === 'Owner') return true;
@@ -796,7 +798,7 @@ function renderMonthlySummary(){
 }
 
 // ---------- TEAM ----------
-pages.innerHTML += `
+pages.insertAdjacentHTML('beforeend', `
 <div class="pagesec section-hidden" id="page-team">
   <div class="card">
     <div class="eyebrow" data-i18n="yourTeam">Your team</div>
@@ -836,10 +838,10 @@ pages.innerHTML += `
     </div>
     <div style="font-size:12px; color:var(--text); margin-top:8px; padding-left:50px;">Manages DMs, comments, and posting schedule.</div>
   </div>
-</div>`;
+</div>`);
 
 // ---------- ADMIN ----------
-pages.innerHTML += `
+pages.insertAdjacentHTML('beforeend', `
 <div class="pagesec section-hidden" id="page-admin">
   <div class="card">
     <div class="eyebrow" data-i18n="ownerControls">Owner controls</div>
@@ -856,7 +858,7 @@ pages.innerHTML += `
     <div style="font-weight:600; font-size:13.5px; margin-bottom:10px;" data-i18n="theme">Theme</div>
     <div class="themeRow" id="themeRow"></div>
   </div>
-</div>`;
+</div>`);
 
 // theme swatches
 const themeRow = document.getElementById('themeRow');
@@ -1051,6 +1053,520 @@ function applyLang(){
 }
 document.getElementById('langToggle').onclick = () => { currentLang = currentLang==='en'?'id':'en'; applyLang(); };
 applyLang();
+
+// ================== PHASE 2: client accounts, treatments, coupons, messages, feedback, colors, website, activity ==================
+const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const isOwner = currentUser.role === 'Owner';
+const rupiah = n => (Math.round(+n||0)).toLocaleString('id-ID');
+const todayISO = () => new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+const LOYALTY = {2:'Loyalty visit 2: 2 of 10 designs free', 5:'Loyalty visit 5: 4 of 10 designs free', 8:'Loyalty visit 8: 15% off total', 10:'Loyalty visit 10: free basic gel / extension minus basic gel price'};
+let PRIVATE_NOTES = [], TREATMENTS = [], COLORS = [], MESSAGES = [], COUPONS = [], FEEDBACK = [], ACTIVITY = [];
+const artists = () => people.filter(p => p.role !== 'Admin');
+const priceKeyFor = name => { const p = people.find(x => x.name === name); return !p ? null : p.role === 'Owner' ? 'owner' : p.name.toLowerCase(); };
+function parsePrice(str){
+  const s = String(str||'').replace(/,/g,'.');
+  const m = s.match(/(\d+(?:\.\d+)?)\s*(?:[–-]\s*(\d+(?:\.\d+)?))?\s*(K|k|jt|rb)?/);
+  if (!m) return 0;
+  const mult = /jt/.test(m[3]||'') ? 1e6 : (m[3] ? 1000 : 1);
+  return Math.round(parseFloat(m[1]) * mult);
+}
+
+// ---------- client card extras ----------
+function clientExtrasHtml(c){
+  const mine = PRIVATE_NOTES.find(n => n.client_id === c.id && n.author_id === currentUser.id);
+  const others = isOwner ? PRIVATE_NOTES.filter(n => n.client_id === c.id && n.author_id !== currentUser.id) : [];
+  const nameOf = id => (people.find(p => p.id === id) || {}).name || 'Someone';
+  return `
+    <div class="divider"></div>
+    <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">👤 Client website account</div>
+    ${c.hasLogin ? `
+      <div style="font-size:12.5px;">Username: <b>${esc(c.username)}</b> ${c.mustSetPin ? '<span class="tag">waiting for client to set PIN</span>' : '<span class="tag">active</span>'}</div>
+      ${isOwner ? `<div class="row" style="gap:6px; margin-top:6px;">
+        <button class="btn-ghost tap" data-resetpin="${c.id}" style="font-size:10.5px; padding:6px 10px;">Reset PIN</button>
+        <button class="btn-ghost tap" data-dellogin="${c.id}" style="font-size:10.5px; padding:6px 10px;">Delete username</button></div>` : ''}`
+    : `<button class="btn-ghost tap" data-mklogin="${c.id}" style="font-size:11px; padding:6px 10px;">+ Create client login</button>`}
+    ${c.clientNote ? `<div style="font-size:11px; color:var(--muted); margin:10px 0 6px;">📝 Client's own note (written by the client)</div>
+      <div style="font-size:12px; background:var(--tint); border-radius:10px; padding:8px 10px; white-space:pre-wrap;">${esc(c.clientNote)}</div>` : ''}
+    <div class="divider"></div>
+    <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">🔒 My private note — only you${isOwner ? '' : ' and the owner'} can see this</div>
+    <textarea data-pnote="${c.id}" placeholder="Private note..." style="min-height:44px;">${esc(mine ? mine.note : '')}</textarea>
+    ${others.map(n => `<div style="font-size:12px; background:var(--tint); border-radius:10px; padding:8px 10px; margin-top:6px;"><b>${esc(nameOf(n.author_id))}</b> (private): ${esc(n.note)}</div>`).join('')}
+    <div style="font-size:11px; color:var(--muted); margin:10px 0 6px;">📌 Shared note — the whole team can see this</div>
+    <textarea data-snote="${c.id}" placeholder="Shared note..." style="min-height:44px;">${esc(c.sharedNote)}</textarea>
+    <button class="btn-primary tap" data-newtreat="${c.id}" style="width:100%; margin-top:10px;">+ Log treatment</button>`;
+}
+
+document.addEventListener('change', async e => {
+  const pn = e.target.closest('[data-pnote]');
+  if (pn){
+    const client_id = pn.dataset.pnote, note = pn.value;
+    const ex = PRIVATE_NOTES.find(n => n.client_id === client_id && n.author_id === currentUser.id);
+    const { data, error } = ex
+      ? await sb.from('ngd_private_notes').update({note, updated_at:new Date().toISOString()}).eq('id', ex.id).select().single()
+      : await sb.from('ngd_private_notes').insert({client_id, author_id:currentUser.id, note}).select().single();
+    if (error) return alert('Could not save note: ' + error.message);
+    if (ex) Object.assign(ex, data); else PRIVATE_NOTES.push(data);
+    return;
+  }
+  const sn = e.target.closest('[data-snote]');
+  if (sn){
+    const { error } = await sb.from('ngd_clients').update({shared_note: sn.value}).eq('id', sn.dataset.snote);
+    if (error) return alert('Could not save note: ' + error.message);
+    const c = clients.find(x => x.id === sn.dataset.snote); if (c) c.sharedNote = sn.value;
+  }
+});
+
+document.addEventListener('click', async e => {
+  const t = e.target;
+  if (t.dataset.mklogin){
+    const c = clients.find(x => x.id === t.dataset.mklogin);
+    const u = prompt(`Username for ${c.name} (no spaces, e.g. ${c.name.split(' ')[0]}):`, c.name.split(' ')[0]);
+    if (!u) return;
+    const { data, error } = await sb.rpc('ngd_create_client_login', { p_client_id: c.id, p_username: u.trim() });
+    if (error) return alert('Could not create login: ' + error.message);
+    alert(`Login created for ${c.name}.\n\nUsername: ${u.trim()}\nOne-time code: ${data}\n\nGive this code to the client in the studio. At first login they will create their own 6-digit PIN.`);
+    c.username = u.trim(); c.hasLogin = true; c.mustSetPin = true; renderClients(document.getElementById('clientSearch').value);
+  }
+  if (t.dataset.resetpin){
+    const c = clients.find(x => x.id === t.dataset.resetpin);
+    if (!confirm(`Reset ${c.name}'s PIN?`)) return;
+    const { data, error } = await sb.rpc('ngd_reset_client_pin', { p_client_id: c.id });
+    if (error) return alert(error.message);
+    alert(`New one-time code for ${c.name}: ${data}\nThey will create a new PIN after logging in with it.`);
+    c.mustSetPin = true; renderClients(document.getElementById('clientSearch').value);
+  }
+  if (t.dataset.dellogin){
+    const c = clients.find(x => x.id === t.dataset.dellogin);
+    if (!confirm(`Delete ${c.name}'s website username? Their treatment history stays in the dashboard.`)) return;
+    const { error } = await sb.rpc('ngd_delete_client_login', { p_client_id: c.id });
+    if (error) return alert(error.message);
+    c.username = ''; c.hasLogin = false; c.mustSetPin = false; renderClients(document.getElementById('clientSearch').value);
+  }
+  if (t.dataset.history){
+    const box = document.getElementById('hist-' + t.dataset.history);
+    if (box.innerHTML){ box.innerHTML = ''; return; }
+    const { data } = await sb.from('ngd_treatments').select('*').eq('client_id', t.dataset.history).order('treatment_date', {ascending:false});
+    box.innerHTML = (data||[]).length ? data.map(treatmentRowHtml).join('') : '<div style="font-size:12px; color:var(--muted); margin-top:8px;">No treatments logged yet.</div>';
+  }
+  if (t.dataset.newtreat){ openTreatmentForm(t.dataset.newtreat); }
+  if (t.dataset.confirm){
+    const { error } = await sb.rpc('ngd_confirm_treatment', { p_treatment_id: t.dataset.confirm });
+    if (error) return alert(error.message);
+    await loadTreatments(); await reloadClients();
+  }
+  if (t.dataset.canceltreat){
+    if (!confirm('Cancel this treatment entry?')) return;
+    const { error } = await sb.from('ngd_treatments').update({status:'cancelled'}).eq('id', t.dataset.canceltreat);
+    if (error) return alert(error.message);
+    await loadTreatments();
+  }
+});
+
+// ---------- TREATMENTS page ----------
+pages.insertAdjacentHTML('beforeend', `
+<div class="pagesec section-hidden" id="page-treat">
+  <div class="card">
+    <div class="eyebrow">Treatments</div>
+    <div class="title">Log & confirm</div>
+    <div style="font-size:11px; color:var(--muted); margin-top:6px;">Nail artists log each appointment with its price components. ${isOwner || currentUser.role==='Admin' ? 'You confirm the price — the visit then counts on the client\'s loyalty card.' : 'The owner or admin confirms the price, then it shows on the client\'s website.'}</div>
+    <button class="btn-primary tap" id="treatNewBtn" style="width:100%; margin-top:10px;">+ Log treatment</button>
+  </div>
+  <div id="treatForm"></div>
+  <div class="card"><div class="eyebrow">Waiting for confirmation</div><div id="treatPending" style="margin-top:6px;"></div></div>
+  <div class="card"><div class="eyebrow">Recently confirmed</div><div id="treatDone" style="margin-top:6px;"></div></div>
+</div>`);
+document.getElementById('treatNewBtn').onclick = () => openTreatmentForm(null);
+
+function treatmentRowHtml(t){
+  const items = (t.items||[]).map(i => `<div class="row" style="justify-content:space-between; font-size:12px; padding:2px 0;"><span>${esc(i.label)}${i.qty>1?' × '+i.qty:''}</span><span>${rupiah(i.amount)}</span></div>`).join('');
+  const client = clients.find(c => c.id === t.client_id);
+  const canConfirm = (isOwner || currentUser.role === 'Admin') && t.status === 'pending';
+  return `<div style="border-top:1px solid var(--hairline); padding:10px 0;">
+    <div class="row" style="justify-content:space-between;"><b style="font-weight:600; font-size:12.5px;">${esc(client ? client.name : 'Client')}</b><span class="tag">${esc(t.status)}</span></div>
+    <div style="font-size:10.5px; color:var(--muted); margin-bottom:4px;">${t.treatment_date} · ${esc(t.artist_name||'')}</div>
+    ${items}
+    ${t.discount_amount ? `<div class="row" style="justify-content:space-between; font-size:12px; color:#B0566A;"><span>${esc(t.discount_label||'Discount')}</span><span>−${rupiah(t.discount_amount)}</span></div>` : ''}
+    ${t.coupon_id ? `<div style="font-size:11px; color:#B0566A;">🏷️ Coupon applied</div>` : ''}
+    <div class="row" style="justify-content:space-between; font-size:12.5px; font-weight:600; border-top:1px solid var(--text); margin-top:4px; padding-top:4px;"><span>Total</span><span>Rp ${rupiah(t.total)}</span></div>
+    ${t.note ? `<div style="font-size:11px; color:var(--muted); margin-top:4px;">Note for client: ${esc(t.note)}</div>` : ''}
+    ${canConfirm ? `<div class="row" style="gap:6px; margin-top:8px;"><button class="btn-primary tap" data-confirm="${t.id}" style="flex:1; font-size:11px; padding:7px;">✓ Confirm price</button><button class="btn-ghost tap" data-canceltreat="${t.id}" style="font-size:11px; padding:7px 10px;">Cancel</button></div>` : ''}
+  </div>`;
+}
+async function loadTreatments(){
+  const { data } = await sb.from('ngd_treatments').select('*').neq('status','cancelled').order('created_at', {ascending:false}).limit(60);
+  TREATMENTS = data || [];
+  const mineOnly = !(isOwner || currentUser.role === 'Admin');
+  const vis = mineOnly ? TREATMENTS.filter(t => t.artist_id === currentUser.id || t.created_by === currentUser.id) : TREATMENTS;
+  const pend = vis.filter(t => t.status === 'pending'), done = vis.filter(t => t.status === 'confirmed').slice(0, 20);
+  document.getElementById('treatPending').innerHTML = pend.length ? pend.map(treatmentRowHtml).join('') : '<div style="font-size:12px; color:var(--muted);">Nothing waiting.</div>';
+  document.getElementById('treatDone').innerHTML = done.length ? done.map(treatmentRowHtml).join('') : '<div style="font-size:12px; color:var(--muted);">No confirmed treatments yet.</div>';
+}
+async function reloadClients(){
+  const { data } = await sb.from('ngd_clients').select('*').order('created_at');
+  clients = (data||[]).map(mapClientRow); renderClients(document.getElementById('clientSearch').value);
+}
+
+function openTreatmentForm(clientId){
+  showPage('treat');
+  const box = document.getElementById('treatForm');
+  const defaultArtist = currentUser.role === 'Admin' ? (artists()[0]||{}).name : currentUser.name;
+  box.innerHTML = `
+  <div class="card" id="tf">
+    <div class="eyebrow">New treatment</div>
+    <div style="display:grid; gap:8px; margin-top:8px;">
+      <select id="tfClient"><option value="">Choose client…</option>${clients.map(c => `<option value="${c.id}" ${c.id===clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
+      <div id="tfLoyalty" style="font-size:11px; color:var(--muted);"></div>
+      <div class="row" style="gap:6px;">
+        <input id="tfDate" type="date" value="${todayISO()}" style="flex:1;" />
+        <select id="tfArtist" style="flex:1;">${artists().map(a => `<option ${a.name===defaultArtist?'selected':''}>${esc(a.name)}</option>`).join('')}</select>
+      </div>
+      <datalist id="tfItemsList"></datalist>
+      <div style="font-size:10.5px; color:var(--muted);">Items — start typing (e.g. "cat") to pick from the price list. Unit price fills in automatically; ranges use the lowest price, so adjust if needed.</div>
+      <div id="tfRows"></div>
+      <button class="btn-ghost tap" id="tfAddRow" style="font-size:11px;">+ Add item</button>
+      <div class="row" style="gap:6px;">
+        <input id="tfDiscLabel" placeholder="Discount label (e.g. loyalty visit 2)" style="flex:2;" />
+        <input id="tfDisc" type="number" inputmode="numeric" placeholder="Discount Rp" style="flex:1;" />
+      </div>
+      <input id="tfCoupon" placeholder="Coupon / gift card code (optional, e.g. NG-E67W)" style="text-transform:uppercase;" />
+      <textarea id="tfNote" placeholder="Note the client will see (color, shape, design…)" style="min-height:44px;"></textarea>
+      <div class="row" style="justify-content:space-between; font-weight:600;"><span>Total</span><span id="tfTotal">Rp 0</span></div>
+      <button class="btn-primary tap" id="tfSave" style="width:100%;">Save treatment</button>
+    </div>
+  </div>`;
+  const rows = document.getElementById('tfRows');
+  const addRow = () => {
+    rows.insertAdjacentHTML('beforeend', `<div class="row tfRow" style="gap:4px; margin-bottom:6px;">
+      <input class="tfLabel" list="tfItemsList" placeholder="Item" style="flex:3; font-size:12px;" />
+      <input class="tfQty" type="number" min="1" value="1" style="flex:0 0 46px; font-size:12px; padding:9px 6px;" />
+      <input class="tfUnit" type="number" inputmode="numeric" placeholder="Rp/unit" style="flex:1.4; font-size:12px;" />
+      <span class="tap tfDel" style="cursor:pointer; color:var(--muted);">✕</span></div>`);
+  };
+  const refreshList = async () => {
+    const key = priceKeyFor(document.getElementById('tfArtist').value);
+    const sheet = (PRICING[key]||{sections:[]}).sections.flatMap(sec => sec.items.map(it => ({label: it.label.replace(' ★FAV',''), price: it.price, sec: sec.name})));
+    let past = [];
+    const cid = document.getElementById('tfClient').value;
+    if (cid){
+      const { data } = await sb.from('ngd_treatments').select('items').eq('client_id', cid).order('created_at',{ascending:false}).limit(10);
+      past = [...new Set((data||[]).flatMap(t => (t.items||[]).map(i => i.label)))];
+      const c = clients.find(x => x.id === cid);
+      const nextVisit = (c ? c.visits : 0) + 1;
+      document.getElementById('tfLoyalty').innerHTML = `This will be visit <b>${nextVisit}</b>.` + (LOYALTY[nextVisit] ? ` 🎁 <b>${LOYALTY[nextVisit]}</b> — put it in the discount fields.` : '');
+    }
+    window._tfSheet = sheet;
+    document.getElementById('tfItemsList').innerHTML =
+      past.map(l => `<option value="${esc(l)}">⟲ ordered before</option>`).join('') +
+      sheet.filter(s => !past.includes(s.label)).map(s => `<option value="${esc(s.label)}">${esc(s.sec)} · ${esc(s.price)}</option>`).join('');
+  };
+  const recalc = () => {
+    let sum = 0;
+    rows.querySelectorAll('.tfRow').forEach(r => { sum += (+r.querySelector('.tfQty').value||0) * (+r.querySelector('.tfUnit').value||0); });
+    sum -= +document.getElementById('tfDisc').value || 0;
+    document.getElementById('tfTotal').textContent = 'Rp ' + rupiah(Math.max(sum,0));
+    return Math.max(sum,0);
+  };
+  addRow(); refreshList();
+  document.getElementById('tfAddRow').onclick = addRow;
+  document.getElementById('tfArtist').onchange = refreshList;
+  document.getElementById('tfClient').onchange = refreshList;
+  box.addEventListener('input', e => {
+    if (e.target.classList.contains('tfLabel')){
+      const hit = (window._tfSheet||[]).find(s => s.label === e.target.value);
+      if (hit){ e.target.closest('.tfRow').querySelector('.tfUnit').value = parsePrice(hit.price); }
+    }
+    recalc();
+  });
+  box.addEventListener('click', e => { if (e.target.classList.contains('tfDel')){ e.target.closest('.tfRow').remove(); recalc(); } });
+  document.getElementById('tfSave').onclick = async () => {
+    const client_id = document.getElementById('tfClient').value;
+    if (!client_id) return alert('Choose a client first.');
+    const items = [...rows.querySelectorAll('.tfRow')].map(r => {
+      const label = r.querySelector('.tfLabel').value.trim(), qty = +r.querySelector('.tfQty').value||1, unit = +r.querySelector('.tfUnit').value||0;
+      const hit = (window._tfSheet||[]).find(s => s.label === label);
+      return { label, qty, unit_price: unit, amount: qty*unit, kind: hit ? hit.sec : 'Other' };
+    }).filter(i => i.label);
+    if (!items.length) return alert('Add at least one item.');
+    const artistName = document.getElementById('tfArtist').value;
+    const artist = people.find(p => p.name === artistName);
+    const payload = { client_id, treatment_date: document.getElementById('tfDate').value || todayISO(), artist_id: artist ? artist.id : null, artist_name: artistName,
+      items, discount_label: document.getElementById('tfDiscLabel').value.trim() || null, discount_amount: +document.getElementById('tfDisc').value || 0,
+      total: recalc(), note: document.getElementById('tfNote').value.trim() || null, created_by: currentUser.id };
+    const btn = document.getElementById('tfSave'); btn.disabled = true; btn.textContent = 'Saving…';
+    const { data, error } = await sb.from('ngd_treatments').insert(payload).select().single();
+    btn.disabled = false; btn.textContent = 'Save treatment';
+    if (error) return alert('Could not save: ' + error.message);
+    const code = document.getElementById('tfCoupon').value.trim();
+    if (code){
+      const r = await sb.rpc('ngd_redeem_coupon', { p_code: code, p_treatment_id: data.id });
+      alert(r.error ? 'Treatment saved, but the code was NOT applied: ' + r.error.message : `Treatment saved. Code applied: ${r.data.title}${r.data.value ? ' — ' + r.data.value : ''}. Remember to reflect it in the discount.`);
+    }
+    box.innerHTML = '';
+    await loadTreatments();
+  };
+}
+
+// ---------- COLORS page ----------
+const COLOR_BUCKET = 'ngd-colors';
+const colorUrl = path => sb.storage.from(COLOR_BUCKET).getPublicUrl(path).data.publicUrl;
+pages.insertAdjacentHTML('beforeend', `
+<div class="pagesec section-hidden" id="page-colors">
+  <div class="card">
+    <div class="eyebrow">Client website</div>
+    <div class="title">Color gallery</div>
+    <div style="font-size:11px; color:var(--muted); margin-top:6px;">Photos are compressed automatically (sharp on phones, small file) and appear on the client website.</div>
+    <div style="display:grid; gap:8px; margin-top:10px;">
+      <div class="row" style="gap:6px;"><input id="colCode" placeholder="Code (e.g. NG 12)" style="flex:1;" /><input id="colName" placeholder="Name (optional)" style="flex:1.4;" /></div>
+      <input id="colFile" type="file" accept="image/*" />
+      <button class="btn-primary tap" id="colSave">Upload color</button>
+    </div>
+  </div>
+  <div id="colGrid" style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;"></div>
+</div>`);
+function resizeImage(file, maxSide, quality){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, maxSide / Math.max(img.width, img.height));
+      const cv = document.createElement('canvas'); cv.width = Math.round(img.width*k); cv.height = Math.round(img.height*k);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      cv.toBlob(b => b ? resolve(b) : reject(new Error('Could not compress')), 'image/webp', quality);
+    };
+    img.onerror = () => reject(new Error('Could not read this image'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+async function loadColors(){
+  const { data } = await sb.from('ngd_colors').select('*').order('sort_order').order('created_at');
+  COLORS = data || [];
+  document.getElementById('colGrid').innerHTML = COLORS.map(c => `<div class="card" style="padding:6px; margin:0;">
+    <img src="${colorUrl(c.thumb_path || c.image_path)}" style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:10px;" loading="lazy" />
+    <div style="font-size:10.5px; margin-top:4px;"><b>${esc(c.code)}</b> ${esc(c.name||'')}</div>
+    <span class="tap" data-delcolor="${c.id}" style="font-size:10px; color:var(--muted); cursor:pointer;">Delete</span></div>`).join('')
+    || '<div style="grid-column:1/-1; font-size:12px; color:var(--muted);">No colors yet.</div>';
+}
+document.getElementById('colSave').onclick = async () => {
+  const code = document.getElementById('colCode').value.trim(), file = document.getElementById('colFile').files[0];
+  if (!code || !file) return alert('Add a code and a photo.');
+  const btn = document.getElementById('colSave'); btn.disabled = true; btn.textContent = 'Uploading…';
+  try {
+    const id = crypto.randomUUID();
+    const full = await resizeImage(file, 1200, 0.82), thumb = await resizeImage(file, 400, 0.72);
+    const p1 = `colors/${id}.webp`, p2 = `colors/${id}_t.webp`;
+    let r = await sb.storage.from(COLOR_BUCKET).upload(p1, full, {contentType:'image/webp'}); if (r.error) throw r.error;
+    r = await sb.storage.from(COLOR_BUCKET).upload(p2, thumb, {contentType:'image/webp'}); if (r.error) throw r.error;
+    const ins = await sb.from('ngd_colors').insert({code, name: document.getElementById('colName').value.trim() || null, image_path:p1, thumb_path:p2, added_by: currentUser.id, sort_order: COLORS.length});
+    if (ins.error) throw ins.error;
+    document.getElementById('colCode').value = ''; document.getElementById('colName').value = ''; document.getElementById('colFile').value = '';
+    await loadColors();
+  } catch(err){ alert('Upload failed: ' + err.message); }
+  btn.disabled = false; btn.textContent = 'Upload color';
+};
+document.addEventListener('click', async e => {
+  const id = e.target.dataset && e.target.dataset.delcolor; if (!id) return;
+  const c = COLORS.find(x => x.id === id); if (!confirm(`Delete color ${c.code}?`)) return;
+  await sb.storage.from(COLOR_BUCKET).remove([c.image_path, c.thumb_path].filter(Boolean));
+  const { error } = await sb.from('ngd_colors').delete().eq('id', id);
+  if (error) return alert(error.message);
+  loadColors();
+});
+
+// ---------- WEBSITE page (owner/admin) ----------
+if (isOwner || currentUser.role === 'Admin'){
+  pages.insertAdjacentHTML('beforeend', `
+  <div class="pagesec section-hidden" id="page-website">
+    <div class="card">
+      <div class="eyebrow">Client website</div><div class="title">WiFi & announcement</div>
+      <div style="display:grid; gap:8px; margin-top:10px;">
+        <label style="font-size:10.5px; color:var(--muted);">WiFi name</label><input id="siteWifiName" />
+        <label style="font-size:10.5px; color:var(--muted);">WiFi password</label><input id="siteWifiPw" />
+        <label style="font-size:10.5px; color:var(--muted);">Announcement (Indonesian) — leave empty to hide</label><textarea id="siteAnnId" style="min-height:50px;"></textarea>
+        <label style="font-size:10.5px; color:var(--muted);">Announcement (English)</label><textarea id="siteAnnEn" style="min-height:50px;"></textarea>
+        <button class="btn-primary tap" id="siteSave">Save</button>
+      </div>
+    </div>
+  </div>`);
+  (async () => {
+    const { data } = await sb.from('ngd_site').select('*');
+    const get = k => ((data||[]).find(r => r.key === k) || {}).value || {};
+    document.getElementById('siteWifiName').value = get('wifi').name || '';
+    document.getElementById('siteWifiPw').value = get('wifi').password || '';
+    document.getElementById('siteAnnId').value = get('announcement').id || '';
+    document.getElementById('siteAnnEn').value = get('announcement').en || '';
+  })();
+  document.getElementById('siteSave').onclick = async () => {
+    const rows = [
+      {key:'wifi', value:{name:document.getElementById('siteWifiName').value.trim(), password:document.getElementById('siteWifiPw').value.trim()}, updated_by:currentUser.id, updated_at:new Date().toISOString()},
+      {key:'announcement', value:{id:document.getElementById('siteAnnId').value.trim(), en:document.getElementById('siteAnnEn').value.trim()}, updated_by:currentUser.id, updated_at:new Date().toISOString()}];
+    const { error } = await sb.from('ngd_site').upsert(rows);
+    alert(error ? 'Could not save: ' + error.message : 'Saved — the client website shows it right away.');
+  };
+}
+
+// ---------- MESSAGES & COUPONS (owner) ----------
+if (isOwner){
+  pages.insertAdjacentHTML('beforeend', `
+  <div class="pagesec section-hidden" id="page-messages">
+    <div class="card">
+      <div class="eyebrow">Client website</div><div class="title">Messages</div>
+      <div style="font-size:11px; color:var(--muted); margin-top:6px;">Messages appear as letters when clients open the website. Add a coupon and each client who receives the letter gets their own unique code.</div>
+      <div style="display:grid; gap:8px; margin-top:10px;">
+        <select id="msgKind">
+          <option value="general">General — every client</option>
+          <option value="welcome">Welcome — shown on first visit</option>
+          <option value="birthday">Birthday — automatic during the client's birthday month</option>
+          <option value="visit">After a number of visits</option>
+          <option value="individual">One client only</option>
+        </select>
+        <input id="msgVisit" type="number" min="1" placeholder="Visit number (e.g. 5)" style="display:none;" />
+        <select id="msgClient" style="display:none;"></select>
+        <input id="msgSubId" placeholder="Title (Indonesian)" />
+        <input id="msgSubEn" placeholder="Title (English)" />
+        <textarea id="msgBodyId" placeholder="Message (Indonesian)" style="min-height:60px;"></textarea>
+        <textarea id="msgBodyEn" placeholder="Message (English)" style="min-height:60px;"></textarea>
+        <label class="row" style="font-size:12px; gap:8px;"><input type="checkbox" id="msgHasCoupon" style="width:auto;" /> Include a coupon / gift card</label>
+        <div id="msgCouponBox" style="display:none; gap:8px;">
+          <select id="mcKind"><option value="coupon">Coupon</option><option value="gift_card">Gift card</option></select>
+          <input id="mcTitleId" placeholder="Coupon title (ID), e.g. Hadiah Ulang Tahun" />
+          <input id="mcTitleEn" placeholder="Coupon title (EN), e.g. Birthday Gift" />
+          <input id="mcValue" placeholder="Value shown big, e.g. 10% OFF or 100K" />
+          <input id="mcDescId" placeholder="Details (ID), e.g. Diskon 10% untuk semua layanan" />
+          <input id="mcDescEn" placeholder="Details (EN)" />
+          <input id="mcDays" type="number" min="1" placeholder="Valid for how many days after receiving (e.g. 30)" />
+        </div>
+        <button class="btn-primary tap" id="msgSave">Publish message</button>
+      </div>
+    </div>
+    <div class="card"><div class="eyebrow">Published messages</div><div id="msgList" style="margin-top:6px;"></div></div>
+    <div class="card">
+      <div class="eyebrow">Give a coupon / gift card now</div>
+      <div style="display:grid; gap:8px; margin-top:8px;">
+        <select id="gcClient"></select>
+        <select id="gcKind"><option value="gift_card">Gift card</option><option value="coupon">Coupon</option></select>
+        <input id="gcTitleId" placeholder="Title (ID)" /><input id="gcTitleEn" placeholder="Title (EN)" />
+        <input id="gcValue" placeholder="Value, e.g. 100K" />
+        <input id="gcDescId" placeholder="Details (ID)" /><input id="gcDescEn" placeholder="Details (EN)" />
+        <label style="font-size:10.5px; color:var(--muted);">Valid until</label><input id="gcExp" type="date" />
+        <button class="btn-primary tap" id="gcSave">Create code</button>
+      </div>
+    </div>
+    <div class="card"><div class="eyebrow">All coupon codes</div><div id="cpList" style="margin-top:6px;"></div></div>
+  </div>`);
+  const fillClientSelects = () => ['msgClient','gcClient'].forEach(id => {
+    document.getElementById(id).innerHTML = '<option value="">Choose client…</option>' + clients.map(c => `<option value="${c.id}">${esc(c.name)}${c.hasLogin ? '' : ' (no website login yet)'}</option>`).join('');
+  });
+  document.getElementById('msgKind').onchange = e => {
+    document.getElementById('msgVisit').style.display = e.target.value === 'visit' ? '' : 'none';
+    document.getElementById('msgClient').style.display = e.target.value === 'individual' ? '' : 'none';
+    if (e.target.value === 'individual') fillClientSelects();
+  };
+  document.getElementById('msgHasCoupon').onchange = e => { document.getElementById('msgCouponBox').style.display = e.target.checked ? 'grid' : 'none'; };
+  const v = id => document.getElementById(id).value.trim();
+  document.getElementById('msgSave').onclick = async () => {
+    const kind = v('msgKind');
+    if (!v('msgSubId') || !v('msgBodyId')) return alert('Title and message (Indonesian) are required.');
+    if (kind === 'visit' && !v('msgVisit')) return alert('Enter the visit number.');
+    if (kind === 'individual' && !v('msgClient')) return alert('Choose the client.');
+    const payload = { kind, subject_id:v('msgSubId'), subject_en:v('msgSubEn')||null, body_id:v('msgBodyId'), body_en:v('msgBodyEn')||null,
+      visit_number: kind==='visit' ? +v('msgVisit') : null, client_id: kind==='individual' ? v('msgClient') : null, created_by: currentUser.id,
+      coupon_template: document.getElementById('msgHasCoupon').checked ? { kind:v('mcKind'), title_id:v('mcTitleId')||v('msgSubId'), title_en:v('mcTitleEn')||null, value_text:v('mcValue')||null,
+        description_id:v('mcDescId')||null, description_en:v('mcDescEn')||null, valid_days: v('mcDays') ? +v('mcDays') : null } : null };
+    const { error } = await sb.from('ngd_messages').insert(payload);
+    if (error) return alert('Could not publish: ' + error.message);
+    ['msgSubId','msgSubEn','msgBodyId','msgBodyEn','msgVisit','mcTitleId','mcTitleEn','mcValue','mcDescId','mcDescEn','mcDays'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('msgHasCoupon').checked = false; document.getElementById('msgCouponBox').style.display = 'none';
+    loadMessages();
+  };
+  document.getElementById('gcSave').onclick = async () => {
+    if (!v('gcClient') || !v('gcTitleId')) return alert('Choose a client and add a title.');
+    const { data, error } = await sb.rpc('ngd_issue_coupon', { p_client_id:v('gcClient'), p_kind:v('gcKind'), p_title_id:v('gcTitleId'), p_title_en:v('gcTitleEn')||null,
+      p_value:v('gcValue')||null, p_desc_id:v('gcDescId')||null, p_desc_en:v('gcDescEn')||null, p_expires: v('gcExp')||null });
+    if (error) return alert(error.message);
+    alert(`Created: ${data}\nIt now shows in the client's Coupons page.`);
+    loadMessages();
+  };
+  document.addEventListener('click', async e => {
+    const id = e.target.dataset && e.target.dataset.togglemsg; if (!id) return;
+    const m = MESSAGES.find(x => x.id === id);
+    const { error } = await sb.from('ngd_messages').update({active: !m.active}).eq('id', id);
+    if (error) return alert(error.message);
+    loadMessages();
+  });
+  window.loadMessages = async function(){
+    fillClientSelects();
+    const [m, c] = await Promise.all([sb.from('ngd_messages').select('*').order('created_at',{ascending:false}), sb.from('ngd_coupons').select('*').order('created_at',{ascending:false}).limit(100)]);
+    MESSAGES = m.data || []; COUPONS = c.data || [];
+    const kindLabel = {general:'General', welcome:'Welcome', birthday:'Birthday', visit:'Visit', individual:'One client'};
+    document.getElementById('msgList').innerHTML = MESSAGES.map(x => `<div style="border-top:1px solid var(--hairline); padding:8px 0;">
+      <div class="row" style="justify-content:space-between;"><b style="font-weight:600; font-size:12.5px;">${esc(x.subject_id)}</b><span class="tag">${kindLabel[x.kind]}${x.kind==='visit'?' '+x.visit_number:''}</span></div>
+      <div style="font-size:11.5px; color:var(--muted);">${esc(x.body_id).slice(0,120)}${x.coupon_template ? ' · 🏷️ with coupon' : ''}${x.kind==='individual' ? ' · to ' + esc((clients.find(c=>c.id===x.client_id)||{}).name||'') : ''}</div>
+      <button class="btn-ghost tap" data-togglemsg="${x.id}" style="font-size:10.5px; padding:5px 9px; margin-top:4px;">${x.active ? 'Active — tap to stop' : 'Stopped — tap to activate'}</button></div>`).join('') || '<div style="font-size:12px; color:var(--muted);">No messages yet.</div>';
+    const st = c => c.status==='active' && c.expires_on && c.expires_on < todayISO() ? 'expired' : c.status;
+    document.getElementById('cpList').innerHTML = COUPONS.map(c => `<div class="row" style="justify-content:space-between; border-top:1px solid var(--hairline); padding:6px 0; font-size:12px;">
+      <span><b style="font-weight:600; letter-spacing:.08em;">${esc(c.code)}</b> · ${esc(c.title_id)} ${c.value_text ? '· ' + esc(c.value_text) : ''}<br><span style="color:var(--muted); font-size:10.5px;">${esc((clients.find(x=>x.id===c.client_id)||{}).name||'')}${c.expires_on ? ' · until ' + c.expires_on : ''}</span></span>
+      <span class="tag">${st(c)}</span></div>`).join('') || '<div style="font-size:12px; color:var(--muted);">No codes yet.</div>';
+  };
+}
+
+// ---------- FEEDBACK (owner) ----------
+if (isOwner){
+  pages.insertAdjacentHTML('beforeend', `
+  <div class="pagesec section-hidden" id="page-feedback">
+    <div class="card"><div class="eyebrow">Only you can read this</div><div class="title">Client feedback</div></div>
+    <div id="fbList"></div>
+  </div>`);
+  window.loadFeedback = async function(){
+    const { data } = await sb.from('ngd_feedback').select('*').order('created_at',{ascending:false});
+    FEEDBACK = data || [];
+    document.getElementById('fbList').innerHTML = FEEDBACK.map(f => `<div class="card">
+      <div class="row" style="justify-content:space-between;"><b style="font-weight:600; font-size:12.5px;">${f.anonymous ? 'Anonymous' : esc((clients.find(c=>c.id===f.client_id)||{}).name || 'Client')}</b><span class="tag">about ${esc(f.artist||'')}</span></div>
+      <div style="font-size:10.5px; color:var(--muted);">${new Date(f.created_at).toLocaleString('id-ID')}</div>
+      <div style="font-size:12.5px; margin-top:6px; white-space:pre-wrap;">${esc(f.message)}</div></div>`).join('') || '<div class="card" style="font-size:12px; color:var(--muted);">No feedback yet.</div>';
+  };
+}
+
+// ---------- ACTIVITY (owner) ----------
+if (isOwner){
+  pages.insertAdjacentHTML('beforeend', `
+  <div class="pagesec section-hidden" id="page-activity">
+    <div class="card"><div class="eyebrow">Who changed what</div><div class="title">Activity log</div>
+      <div style="font-size:11px; color:var(--muted); margin-top:6px;">Every change by the team (and clients' own notes) is recorded automatically. Latest 150.</div></div>
+    <div class="card" id="actList"></div>
+  </div>`);
+  const tableLabel = {ngd_clients:'client', ngd_treatments:'treatment', ngd_coupons:'coupon', ngd_pricing:'price', ngd_bookings:'booking', ngd_messages:'message', ngd_colors:'color', ngd_site:'website', ngd_staff:'team', ngd_vouchers:'voucher', ngd_kb_items:'knowledge', ngd_guidance:'guidance'};
+  const verb = {INSERT:'added', UPDATE:'changed', DELETE:'deleted'};
+  const nameOfRow = r => { const d = r.new_data || r.old_data || {}; return d.name || d.item || d.code || d.subject_id || d.client_name || d.title || d.question || d.key || ''; };
+  const diff = r => {
+    if (r.action !== 'UPDATE') return '';
+    const o = r.old_data||{}, n = r.new_data||{};
+    return Object.keys(n).filter(k => !['updated_at','created_at'].includes(k) && JSON.stringify(o[k]) !== JSON.stringify(n[k]))
+      .map(k => `<div style="font-size:10.5px; color:var(--muted);">${esc(k)}: ${esc(JSON.stringify(o[k]??'')).slice(0,60)} → ${esc(JSON.stringify(n[k]??'')).slice(0,60)}</div>`).join('');
+  };
+  window.loadActivity = async function(){
+    const { data } = await sb.from('ngd_activity').select('*').order('created_at',{ascending:false}).limit(150);
+    ACTIVITY = data || [];
+    document.getElementById('actList').innerHTML = ACTIVITY.map(r => `<div style="border-top:1px solid var(--hairline); padding:7px 0;">
+      <div style="font-size:12px;"><b style="font-weight:600;">${esc(r.actor_name)}</b> ${verb[r.action]||r.action} ${tableLabel[r.table_name]||r.table_name} <b style="font-weight:500;">${esc(nameOfRow(r))}</b></div>
+      <div style="font-size:10px; color:var(--muted);">${new Date(r.created_at).toLocaleString('id-ID')}</div>${diff(r)}</div>`).join('') || '<div style="font-size:12px; color:var(--muted);">Nothing yet.</div>';
+  };
+}
+
+// refresh owner pages when opened
+document.getElementById('topnav').addEventListener('click', e => {
+  const b = e.target.closest('.navbtn'); if (!b) return;
+  if (b.dataset.key === 'messages' && window.loadMessages) loadMessages();
+  if (b.dataset.key === 'feedback' && window.loadFeedback) loadFeedback();
+  if (b.dataset.key === 'activity' && window.loadActivity) loadActivity();
+  if (b.dataset.key === 'treat') loadTreatments();
+});
+
+// initial phase-2 data
+(async () => {
+  const { data } = await sb.from('ngd_private_notes').select('*');
+  PRIVATE_NOTES = data || [];
+  renderClients(document.getElementById('clientSearch').value);
+  loadTreatments(); loadColors();
+})();
 
 document.getElementById('logoutBtn').onclick = async () => { await sb.auth.signOut(); location.reload(); };
 document.getElementById('changePwBtn').onclick = async () => {
