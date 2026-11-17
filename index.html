@@ -1886,6 +1886,196 @@ function openSetEditor(tid){
 document.addEventListener('click', e => { const id = e.target.dataset && e.target.dataset.mkset; if (id) openSetEditor(id); });
 loadSets().then(() => loadTreatments());
 
+
+// ---------- WEB BOOKINGS: requests, schedule, notifications ----------
+const DP_BUCKET = 'ngd-dp';
+const hmToMin = t => { const [h,m] = String(t).split(':').map(Number); return h*60 + (m||0); };
+const dayLabel = d => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short'});
+const durLabel = m => (Math.floor(m/60) ? Math.floor(m/60) + 'h ' : '') + (m%60 ? (m%60) + 'm' : '');
+const BK_ST = {awaiting_dp:'Waiting for DP', awaiting_approval:'DP to check', confirmed:'Confirmed', rejected:'Rejected', cancelled:'Cancelled', expired:'Expired'};
+let BOOK_CFG = null, APPTS = [];
+const bookArtists = () => people.filter(p => ['Owner','Senior artist','Junior artist'].includes(p.role));
+const canManageAppt = a => isOwnerOrAdmin || a.artist_id === currentUser.id;
+
+const calPage = document.getElementById('page-calendar');
+calPage.firstElementChild.insertAdjacentHTML('afterend', `
+  <div class="card" id="bkReqCard"><div class="eyebrow">From the client website</div><div class="title">Booking requests</div><div id="bkReqList" style="margin-top:8px;"><div style="font-size:12px; color:var(--muted);">Loading…</div></div></div>
+  <div class="card" id="bkSchedCard">
+    <div class="eyebrow">Open & close times</div><div class="title">Schedule</div>
+    <div style="font-size:11px; color:var(--muted); margin-top:6px;">Tap a time to open or close it for web booking. Every change notifies the owner & admin.</div>
+    <div class="row" style="gap:6px; margin-top:10px;">
+      <select id="bkSchArtist" style="flex:1;">${bookArtists().filter(a => isOwnerOrAdmin || a.id === currentUser.id).map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select>
+      <input id="bkSchDate" type="date" value="${todayISO()}" style="flex:1;" />
+    </div>
+    <div id="bkSchDay" style="margin-top:10px;"></div>
+    <div class="row" style="gap:6px; margin-top:10px;"><input id="bkExtraTime" type="time" step="900" style="flex:1;" /><button class="btn-ghost tap" id="bkExtraBtn" style="font-size:11px;">+ Open extra time</button></div>
+    <button class="btn-primary tap" id="bkAddBtn" style="width:100%; margin-top:10px;">+ Add booking for a client (e.g. from DM)</button>
+    <div id="bkAddForm"></div>
+  </div>
+  <div class="card"><div class="eyebrow">Next 30 days</div><div class="title" style="font-size:15px;">Upcoming confirmed</div><div id="bkUpList" style="margin-top:8px;"></div></div>`);
+
+async function loadBookCfg(){ const { data } = await sb.from('ngd_site').select('value').eq('key','booking').maybeSingle(); BOOK_CFG = data ? data.value : null; }
+async function loadAppts(){
+  const { data } = await sb.from('ngd_appointments').select('*').gte('appt_date', todayISO()).order('appt_date').order('start_min');
+  const now = new Date();
+  APPTS = (data||[]).map(a => (a.status === 'awaiting_dp' && a.hold_until && new Date(a.hold_until) <= now) ? {...a, status:'expired'} : a);
+  renderBkRequests(); renderBkUpcoming();
+  const pend = APPTS.filter(a => canManageAppt(a) && (a.status === 'awaiting_approval' || a.status === 'awaiting_dp')).length;
+  const nb = document.querySelector('.navbtn[data-key="calendar"]');
+  if (nb){ let d = nb.querySelector('.navdot'); if (pend && !d){ nb.insertAdjacentHTML('beforeend', '<span class="navdot" style="position:absolute; top:6px; right:10px; width:7px; height:7px; border-radius:50%; background:#B0566A;"></span>'); nb.style.position='relative'; } if (!pend && d) d.remove(); }
+}
+function apptLine(a){
+  return `<div style="font-size:11px; color:var(--muted);">${dayLabel(a.appt_date)} · ${minToHM(a.start_min)}–${minToHM(a.start_min + a.duration_min)} · ${esc(a.artist_name||'')}</div>
+    <div style="font-size:12px; margin-top:2px;">${esc(a.summary||'')} <span style="color:var(--muted);">(±${durLabel(a.duration_min)})</span></div>
+    ${a.note ? `<div style="font-size:11px; color:var(--muted); margin-top:2px;">“${esc(a.note)}”</div>` : ''}`;
+}
+const minToHM = m => String(Math.floor(m/60)).padStart(2,'0') + ':' + String(m%60).padStart(2,'0');
+function renderBkRequests(){
+  const list = APPTS.filter(a => canManageAppt(a) && (a.status === 'awaiting_approval' || a.status === 'awaiting_dp'))
+    .sort((x,y) => (x.status === 'awaiting_approval' ? 0 : 1) - (y.status === 'awaiting_approval' ? 0 : 1));
+  const el = document.getElementById('bkReqList');
+  el.innerHTML = list.length ? list.map(a => `<div style="border-top:1px solid var(--hairline); padding:10px 0;">
+      <div class="row" style="justify-content:space-between;"><b style="font-weight:600; font-size:13px;">${esc(a.client_name||'Client')}</b><span class="tag" style="${a.status==='awaiting_approval'?'background:var(--text); color:var(--bg);':''}">${BK_ST[a.status]}</span></div>
+      ${apptLine(a)}
+      <div style="font-size:11px; margin-top:4px;">DP Rp ${rupiah(a.dp_amount)}${a.status==='awaiting_dp' ? ` · proof due ${new Date(a.hold_until).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'})}` : ''}</div>
+      ${a.proof_path ? `<div class="bkProof" data-proof="${esc(a.proof_path)}" style="margin-top:8px;"><span style="font-size:11px; color:var(--muted);">Loading proof…</span></div>` : ''}
+      <div class="row" style="gap:6px; margin-top:8px;">
+        <button class="btn-primary tap" data-bkok="${a.id}" style="flex:1; font-size:11px; padding:7px;">✓ Approve</button>
+        <button class="btn-ghost tap" data-bkno="${a.id}" style="flex:1; font-size:11px; padding:7px;">Reject</button>
+      </div>
+      ${a.status==='awaiting_dp' ? `<div style="font-size:10px; color:var(--muted); margin-top:4px;">No proof yet. Approve only if the DP already arrived (e.g. sent via DM).</div>` : ''}
+    </div>`).join('') : '<div style="font-size:12px; color:var(--muted);">No requests waiting.</div>';
+  el.querySelectorAll('.bkProof').forEach(async box => {
+    const { data } = await sb.storage.from(DP_BUCKET).createSignedUrl(box.dataset.proof, 3600);
+    box.innerHTML = data ? `<a href="${data.signedUrl}" target="_blank"><img src="${data.signedUrl}" style="max-width:140px; max-height:180px; border-radius:10px; border:1px solid var(--hairline); display:block;"></a><div style="font-size:10px; color:var(--muted); margin-top:2px;">Tap to enlarge</div>` : '<span style="font-size:11px; color:#B0566A;">Could not load proof</span>';
+  });
+}
+function renderBkUpcoming(){
+  const lim = new Date(); lim.setDate(lim.getDate() + 30); const limISO = lim.toISOString().slice(0,10);
+  const list = APPTS.filter(a => a.status === 'confirmed' && a.appt_date <= limISO && (isOwnerOrAdmin || a.artist_id === currentUser.id));
+  document.getElementById('bkUpList').innerHTML = list.length ? list.map(a => `<div style="border-top:1px solid var(--hairline); padding:8px 0;">
+    <div class="row" style="justify-content:space-between;"><b style="font-weight:600; font-size:12.5px;">${esc(a.client_name||'—')}</b>${canManageAppt(a) ? `<span class="tap" data-bkcancel="${a.id}" style="cursor:pointer; font-size:10.5px; color:var(--muted); text-decoration:underline;">Cancel</span>` : ''}</div>${apptLine(a)}</div>`).join('')
+    : '<div style="font-size:12px; color:var(--muted);">Nothing confirmed yet.</div>';
+}
+async function renderBkDay(){
+  const artist = document.getElementById('bkSchArtist').value, date = document.getElementById('bkSchDate').value, box = document.getElementById('bkSchDay');
+  if (!artist || !date){ box.innerHTML = ''; return; }
+  box.innerHTML = '<div style="font-size:11px; color:var(--muted);">Loading…</div>';
+  const { data, error } = await sb.rpc('ngd_team_day', { p_artist: artist, p_date: date });
+  if (error){ box.innerHTML = `<div style="font-size:11px; color:#B0566A;">${esc(error.message)}</div>`; return; }
+  const busyAt = t => (data.appointments||[]).find(a => hmToMin(a.time) <= hmToMin(t) && hmToMin(t) < hmToMin(a.end));
+  data.slots = data.slots || []; box.innerHTML = (data.slots.length ? `<div style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px;">${data.slots.map(s => { const b = busyAt(s.time);
+      return `<button class="tap" ${b ? '' : `data-bkslot="${s.time}" data-open="${s.open ? 1 : 0}"`} style="border:1px solid ${s.open ? 'var(--text)' : 'var(--hairline)'}; background:${b ? 'var(--tint)' : s.open ? 'var(--surface,#fff)' : 'transparent'}; color:${s.open ? 'var(--text)' : 'var(--muted)'}; border-radius:10px; padding:8px 2px; font-size:12px; cursor:${b ? 'default' : 'pointer'};">
+        <b style="font-weight:600;">${s.time}</b><br><span style="font-size:9.5px;">${b ? esc(b.client||'Booked') : s.open ? 'Open' : 'Closed'}${s.default ? '' : ' · extra'}</span></button>`; }).join('')}</div>`
+    : '<div style="font-size:11.5px; color:var(--muted);">No times on this day (not a booking day). Use “Open extra time” to add one.</div>')
+    + ((data.appointments||[]).length ? `<div style="margin-top:8px;">${data.appointments.map(a => `<div style="font-size:11px; padding:3px 0;">🕒 ${a.time}–${a.end} · <b style="font-weight:600;">${esc(a.client||'')}</b> · ${esc(a.summary)} <span class="tag" style="font-size:9px;">${BK_ST[a.status]||a.status}</span></div>`).join('')}</div>` : '');
+}
+function bookAddFormHtml(){
+  const artist = people.find(p => p.id === document.getElementById('bkSchArtist').value) || {};
+  const tier = artist.role === 'Owner' ? 'owner' : artist.role === 'Senior artist' ? 'senior' : 'junior';
+  const svcs = ((BOOK_CFG||{}).services||[]).filter(s => s.min[tier] != null);
+  return `<div class="divider"></div><div style="display:grid; gap:8px;">
+    <div style="font-size:11.5px; font-weight:600;">New booking with ${esc(artist.name||'')} on ${esc(document.getElementById('bkSchDate').value)}</div>
+    <select id="bkfClient"><option value="">Choose client…</option>${clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
+    <input id="bkfTime" type="time" step="900" value="08:00" />
+    <div style="font-size:10.5px; color:var(--muted);">Services (the duration is calculated automatically)</div>
+    <div style="display:flex; flex-wrap:wrap; gap:6px;">${svcs.map(s => `<label class="pill" style="font-size:10.5px; padding:5px 9px; display:flex; gap:5px; align-items:center;"><input type="checkbox" class="bkfSvc" value="${s.key}" style="width:auto;"> ${esc(s.en)} · ${s.min[tier]}m</label>`).join('')}</div>
+    <textarea id="bkfNote" placeholder="Note (optional)" style="min-height:40px;"></textarea>
+    <button class="btn-primary tap" id="bkfSave">Save booking</button></div>`;
+}
+document.getElementById('bkSchArtist').onchange = () => { renderBkDay(); document.getElementById('bkAddForm').innerHTML = ''; };
+document.getElementById('bkSchDate').onchange = () => { renderBkDay(); document.getElementById('bkAddForm').innerHTML = ''; };
+document.addEventListener('click', async e => {
+  const sl = e.target.closest('[data-bkslot]');
+  if (sl){ const open = sl.dataset.open === '1';
+    const { error } = await sb.rpc('ngd_set_slot', { p_artist: document.getElementById('bkSchArtist').value, p_date: document.getElementById('bkSchDate').value, p_time: sl.dataset.bkslot, p_open: !open });
+    if (error) return alert(error.message); return renderBkDay(); }
+  if (e.target.id === 'bkExtraBtn'){ const t = document.getElementById('bkExtraTime').value; if (!t) return alert('Choose a time first.');
+    const { error } = await sb.rpc('ngd_set_slot', { p_artist: document.getElementById('bkSchArtist').value, p_date: document.getElementById('bkSchDate').value, p_time: t, p_open: true });
+    if (error) return alert(error.message); document.getElementById('bkExtraTime').value = ''; return renderBkDay(); }
+  if (e.target.id === 'bkAddBtn'){ if (!BOOK_CFG) await loadBookCfg(); document.getElementById('bkAddForm').innerHTML = bookAddFormHtml(); return; }
+  if (e.target.id === 'bkfSave'){
+    const p = { p_client: document.getElementById('bkfClient').value || null, p_artist: document.getElementById('bkSchArtist').value, p_date: document.getElementById('bkSchDate').value,
+      p_time: document.getElementById('bkfTime').value, p_services: [...document.querySelectorAll('.bkfSvc:checked')].map(x => x.value), p_note: document.getElementById('bkfNote').value.trim() || null, p_force: false };
+    if (!p.p_client) return alert('Choose a client.');
+    let r = await sb.rpc('ngd_team_book', p);
+    if (r.error && /CONFLICT:/.test(r.error.message)){
+      const why = r.error.message.split('CONFLICT:')[1];
+      if (!confirm(why === 'too_long' ? 'This treatment runs into the next booking. Save anyway?' : why === 'taken' ? 'This time is already booked. Save anyway (double booking)?' : 'This time is closed for web booking. Save anyway?')) return;
+      r = await sb.rpc('ngd_team_book', { ...p, p_force: true });
+    }
+    if (r.error) return alert('Could not save: ' + r.error.message);
+    document.getElementById('bkAddForm').innerHTML = ''; renderBkDay(); loadAppts(); return;
+  }
+  const ok = e.target.closest('[data-bkok]');
+  if (ok){ if (!confirm('Approve this booking? The client will see it as confirmed.')) return;
+    const { error } = await sb.rpc('ngd_decide_booking', { p_id: ok.dataset.bkok, p_approve: true }); if (error) return alert(error.message); loadAppts(); renderBkDay(); return; }
+  const no = e.target.closest('[data-bkno]');
+  if (no){ const reason = prompt('Reason for the client (e.g. DP amount does not match, please DM us):'); if (reason === null) return;
+    const { error } = await sb.rpc('ngd_decide_booking', { p_id: no.dataset.bkno, p_approve: false, p_reason: reason }); if (error) return alert(error.message); loadAppts(); renderBkDay(); return; }
+  const cx = e.target.closest('[data-bkcancel]');
+  if (cx){ const reason = prompt('Cancel this confirmed booking? Reason shown to the client (optional):'); if (reason === null) return;
+    const { error } = await sb.rpc('ngd_team_cancel_booking', { p_id: cx.dataset.bkcancel, p_reason: reason }); if (error) return alert(error.message); loadAppts(); renderBkDay(); return; }
+});
+
+// notifications bell
+document.getElementById('changePwBtn').insertAdjacentHTML('beforebegin', `<button id="bellBtn" class="pill tap" style="font-size:10.5px; padding:5px 10px; margin-right:6px; position:relative;">🔔<span id="bellCount" style="display:none; position:absolute; top:-5px; right:-5px; min-width:16px; height:16px; border-radius:8px; background:#B0566A; color:#fff; font-size:9px; line-height:16px; text-align:center; padding:0 4px;"></span></button>`);
+let NOTIFS = [];
+async function loadNotifs(){
+  const { data } = await sb.from('ngd_notifications').select('*').order('created_at', {ascending:false}).limit(40);
+  NOTIFS = data || []; const n = NOTIFS.filter(x => !x.read_at).length, c = document.getElementById('bellCount');
+  c.style.display = n ? 'block' : 'none'; c.textContent = n > 9 ? '9+' : n;
+}
+document.getElementById('bellBtn').onclick = async () => {
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed; inset:0; background:rgba(17,17,17,.4); z-index:90; display:flex; justify-content:center; align-items:flex-start; padding:60px 14px;';
+  ov.innerHTML = `<div style="background:var(--bg); width:100%; max-width:440px; max-height:75vh; overflow:auto; border-radius:18px; padding:16px;">
+    <div class="row" style="justify-content:space-between;"><div class="eyebrow">Notifications</div><span class="tap" data-close style="cursor:pointer; font-size:18px;">✕</span></div>
+    ${NOTIFS.length ? NOTIFS.map(x => `<div style="border-top:1px solid var(--hairline); padding:9px 0; ${x.read_at ? 'opacity:.6;' : ''}">
+      <div style="font-size:12.5px; font-weight:${x.read_at ? 400 : 600};">${esc(x.title)}</div>
+      ${x.body ? `<div style="font-size:11px; color:var(--muted); margin-top:2px;">${esc(x.body)}</div>` : ''}
+      <div style="font-size:10px; color:var(--muted); margin-top:2px;">${new Date(x.created_at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div></div>`).join('') : '<div style="font-size:12px; color:var(--muted); padding:10px 0;">No notifications yet.</div>'}
+    ${NOTIFS.some(x => /^booking/.test(x.kind)) ? `<button class="btn-primary tap" data-gobook style="width:100%; margin-top:10px;">Open booking requests</button>` : ''}</div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click', ev => { if (ev.target === ov || ev.target.closest('[data-close]')) ov.remove(); if (ev.target.closest('[data-gobook]')){ ov.remove(); showPage('calendar'); } });
+  const unread = NOTIFS.filter(x => !x.read_at).map(x => x.id);
+  if (unread.length){ await sb.from('ngd_notifications').update({ read_at: new Date().toISOString() }).in('id', unread); loadNotifs(); }
+};
+
+// booking settings (owner & admin, Website page)
+if (document.getElementById('page-website')){
+  document.getElementById('page-website').insertAdjacentHTML('beforeend', `<div class="card"><div class="eyebrow">Client website</div><div class="title">Booking settings</div>
+    <div style="font-size:11px; color:var(--muted); margin-top:6px;">Clients can book up to this date. Move it forward each time you open the new month's schedule (last Tuesday of the month).</div>
+    <div style="display:grid; gap:8px; margin-top:10px;">
+      <label style="font-size:10.5px; color:var(--muted);">Booking open until</label><input id="bkOpenUntil" type="date" />
+      <div class="row" style="gap:6px;"><div style="flex:1;"><label style="font-size:10.5px; color:var(--muted);">DP owner</label><input id="bkDpOwner" type="number" /></div><div style="flex:1;"><label style="font-size:10.5px; color:var(--muted);">DP senior</label><input id="bkDpSenior" type="number" /></div><div style="flex:1;"><label style="font-size:10.5px; color:var(--muted);">DP junior</label><input id="bkDpJunior" type="number" /></div></div>
+      <div style="font-size:10.5px; color:var(--muted); margin-top:4px;">Duration in minutes per level (Owner / Senior / Junior). Leave empty = not offered with that level. These decide which times are blocked.</div>
+      <div id="bkSvcTable"></div>
+      <button class="btn-primary tap" id="bkSetSave">Save booking settings</button>
+    </div></div>`);
+  (async () => {
+    await loadBookCfg(); const c = BOOK_CFG || {};
+    document.getElementById('bkOpenUntil').value = c.open_until || '';
+    document.getElementById('bkDpOwner').value = (c.dp||{}).owner || ''; document.getElementById('bkDpSenior').value = (c.dp||{}).senior || ''; document.getElementById('bkDpJunior').value = (c.dp||{}).junior || '';
+    const G = {base:'Treatment', removal:'Removal (only with a treatment)', design:'Design (one per booking)', extra:'Extra'};
+    let last = '';
+    document.getElementById('bkSvcTable').innerHTML = (c.services||[]).map(s => { const head = s.group !== last ? `<div style="font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:10px 0 4px;">${G[s.group]||s.group}</div>` : ''; last = s.group;
+      return head + `<div class="row" style="gap:4px; margin-bottom:4px; align-items:center;"><span style="flex:2.4; font-size:11.5px;">${esc(s.en)}</span>${['owner','senior','junior'].map(t => `<input class="bkMin" data-key="${s.key}" data-tier="${t}" type="number" inputmode="numeric" value="${s.min[t] ?? ''}" placeholder="—" style="flex:1; font-size:12px; padding:7px 6px;" />`).join('')}</div>`; }).join('');
+  })();
+  document.getElementById('bkSetSave').onclick = async () => {
+    const c = JSON.parse(JSON.stringify(BOOK_CFG || {}));
+    c.open_until = document.getElementById('bkOpenUntil').value || c.open_until;
+    c.dp = { owner: +document.getElementById('bkDpOwner').value || 0, senior: +document.getElementById('bkDpSenior').value || 0, junior: +document.getElementById('bkDpJunior').value || 0 };
+    document.querySelectorAll('.bkMin').forEach(i => { const s = c.services.find(x => x.key === i.dataset.key); const v = i.value.trim(); s.min[i.dataset.tier] = v === '' ? null : Math.max(5, parseInt(v) || 0); });
+    const { error } = await sb.from('ngd_site').upsert({ key:'booking', value:c, updated_by:currentUser.id, updated_at:new Date().toISOString() });
+    if (error) return alert('Could not save: ' + error.message);
+    BOOK_CFG = c; alert('Saved — the client website uses these settings right away.');
+  };
+}
+
+loadBookCfg(); loadAppts(); renderBkDay(); loadNotifs();
+setInterval(() => { loadNotifs(); loadAppts(); }, 60000);
+
 document.getElementById('logoutBtn').onclick = async () => { await sb.auth.signOut(); location.reload(); };
 document.getElementById('changePwBtn').onclick = async () => {
   const pw = prompt('New password (min. 6 characters):');
