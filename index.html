@@ -102,9 +102,9 @@ function showLoginError(msg){ const el=document.getElementById('loginError'); el
 async function enterApp(){
   const { data: { user } } = await sb.auth.getUser();
   if (!user) return false;
-  const { data: staffRows, error } = await sb.from('ngd_staff').select('id,name,role,username,access,user_id,calendar_email').order('created_at');
+  const { data: staffRows, error } = await sb.from('ngd_staff').select('id,name,role,username,access,user_id,calendar_email,profile_title,bio').order('created_at');
   if (error || !staffRows){ showLoginError('Could not load your account. Try again.'); return false; }
-  people = staffRows.map(r => ({ id:r.id, name:r.name, role:r.role, locked:r.role==='Owner', username:r.username, access:r.access||{}, user_id:r.user_id, calEmail:r.calendar_email||'' }));
+  people = staffRows.map(r => ({ id:r.id, name:r.name, role:r.role, locked:r.role==='Owner', username:r.username, access:r.access||{}, user_id:r.user_id, calEmail:r.calendar_email||'', title:r.profile_title||'', bio:r.bio||'' }));
   const me = people.find(p => p.user_id === user.id);
   if (!me){ await sb.auth.signOut(); showLoginError('This account is not part of the team.'); return false; }
   currentUser = me;
@@ -882,41 +882,9 @@ pages.insertAdjacentHTML('beforeend', `
   <div class="card">
     <div class="eyebrow" data-i18n="yourTeam">Your team</div>
     <div class="title" data-i18n="nailArtistsAdmin">Nail artists & admin</div>
-    <div style="font-size:10.5px; color:var(--muted); margin-top:4px;" data-i18n="ownerEditOnly">Only the owner can edit this page.</div>
+    <div style="font-size:10.5px; color:var(--muted); margin-top:4px;" data-i18n="ownerEditOnly">The owner and admin can edit everyone; each nail artist can edit their own profile.</div>
   </div>
-  <div class="card">
-    <div class="row">
-      <div class="avatar">N</div>
-      <div style="flex:1">
-        <div style="font-weight:600; font-size:14px;">Nayla</div>
-        <div style="font-size:11.5px; color:var(--muted);">Senior nail artist · Tue–Fri</div>
-      </div>
-      <span class="tag">Editor</span>
-    </div>
-    <div style="font-size:12px; color:var(--text); margin-top:8px; padding-left:50px;">3 years experience, specializes in chrome and minimalist sets.</div>
-  </div>
-  <div class="card">
-    <div class="row">
-      <div class="avatar">F</div>
-      <div style="flex:1">
-        <div style="font-weight:600; font-size:14px;">Fida</div>
-        <div style="font-size:11.5px; color:var(--muted);">Junior nail artist</div>
-      </div>
-      <span class="tag">Editor</span>
-    </div>
-    <div style="font-size:12px; color:var(--text); margin-top:8px; padding-left:50px;">Joined November 2026.</div>
-  </div>
-  <div class="card">
-    <div class="row">
-      <div class="avatar">F</div>
-      <div style="flex:1">
-        <div style="font-weight:600; font-size:14px;">Falah — Admin</div>
-        <div style="font-size:11.5px; color:var(--muted);">Handles chats, scheduling posts</div>
-      </div>
-      <span class="tag">Admin-managed</span>
-    </div>
-    <div style="font-size:12px; color:var(--text); margin-top:8px; padding-left:50px;">Manages DMs, comments, and posting schedule.</div>
-  </div>
+  <div id="teamList"></div>
 </div>`);
 
 // ---------- ADMIN ----------
@@ -1094,7 +1062,7 @@ const TRANSLATIONS = {
     adminKnowledgeBase:'Admin knowledge base', qaLibrary:'Q&A library', searchKnowledgePlaceholder:'Search every word in every entry...',
     browseByHashtag:'Browse by hashtag (owner can add new ones):', addMaterial:'+ Add material', guidance:'Guidance', teamGuidance:'Team guidance',
     teamActivity:'Team activity', chitchatTitle:'Chit-chat', sayToTeamPlaceholder:'Say something to the team...', post:'Post',
-    yourTeam:'Your team', nailArtistsAdmin:'Nail artists & admin', ownerEditOnly:'Only the owner can edit this page.',
+    yourTeam:'Your team', nailArtistsAdmin:'Nail artists & admin', ownerEditOnly:'The owner and admin can edit everyone; each nail artist can edit their own profile.',
     ownerAdminOnly:'Owner & Admin only', pricingReports:'Pricing & reports', loyaltyCardAuto:'🎁 Loyalty card — automatic',
     customVouchers:'🏷️ Custom vouchers', monthlySummaryTitle:'📊 Monthly summary',
     ownerControls:'Owner controls', adminTitle:'Admin', teamPageAccess:'Team & page access', loginAccess:'Login access', theme:'Theme'},
@@ -2234,6 +2202,30 @@ if (document.getElementById('page-website')){
     alert('Saved — the client website uses these settings right away.');
   };
 }
+
+// ---- team profiles (owner/admin edit all, each person edits their own)
+const ROLE_LABEL = { 'Owner':'Owner', 'Admin':'Admin', 'Senior artist':'Senior nail artist', 'Junior artist':'Junior nail artist' };
+function renderTeam(){
+  const el = document.getElementById('teamList'); if (!el) return;
+  el.innerHTML = people.map(p => { const can = isOwnerOrAdmin || p.id === currentUser.id;
+    return `<div class="card"><div class="row"><div class="avatar">${esc((p.name||'?')[0])}</div>
+      <div style="flex:1"><div style="font-weight:600; font-size:14px;">${esc(p.name)}</div>
+      <div style="font-size:11.5px; color:var(--muted);">${esc(p.title || ROLE_LABEL[p.role] || p.role)}</div></div>
+      ${can ? `<button class="btn-ghost tap" data-teamedit="${p.id}" style="font-size:10.5px; padding:5px 10px;">Edit</button>` : ''}</div>
+      <div id="teamBio-${p.id}" style="font-size:12px; color:${p.bio ? 'var(--text)' : 'var(--muted)'}; margin-top:8px; padding-left:50px; white-space:pre-wrap;">${p.bio ? esc(p.bio) : (can ? 'No description yet — tap Edit to add one.' : '')}</div></div>`; }).join('');
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-teamedit]'); if (b){ const p = people.find(x => x.id === b.dataset.teamedit);
+    document.getElementById('teamBio-' + p.id).innerHTML = `<div style="display:grid; gap:6px;"><input id="tmTitle" value="${esc(p.title || ROLE_LABEL[p.role] || '')}" placeholder="Role line, e.g. Senior nail artist · Tue–Fri" />
+      <textarea id="tmBio" style="min-height:70px;" placeholder="About (experience, specialties…)">${esc(p.bio||'')}</textarea>
+      <div class="row" style="gap:6px;"><button class="btn-ghost tap" data-teamcancel style="flex:1;">Cancel</button><button class="btn-primary tap" data-teamsave="${p.id}" style="flex:1;">Save</button></div></div>`; return; }
+  if (e.target.closest('[data-teamcancel]')) return renderTeam();
+  const sv = e.target.closest('[data-teamsave]'); if (sv){ const p = people.find(x => x.id === sv.dataset.teamsave);
+    const t = document.getElementById('tmTitle').value.trim(), bio = document.getElementById('tmBio').value.trim();
+    const { error } = await sb.rpc('ngd_update_staff_profile', { p_id: p.id, p_title: t, p_bio: bio }); if (error) return alert(error.message);
+    p.title = t; p.bio = bio; renderTeam(); }
+});
+renderTeam();
 
 // ---- home: greeting, today's bookings, team announcements
 function renderHome(){
