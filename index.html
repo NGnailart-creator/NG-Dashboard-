@@ -899,7 +899,7 @@ function renderMatrix(){
   el.querySelectorAll('[data-resetpw]').forEach(btn => {
     btn.onclick = async () => {
       const p = people[+btn.dataset.resetpw];
-      const newPw = prompt(`New temporary password for ${p.name} (min. 8 characters):`);
+      const newPw = prompt(`New temporary password for ${p.name} (min. 6 characters):`);
       if (!newPw) return;
       const { error } = await sb.rpc('ngd_reset_staff_password', { p_staff_id: p.id, p_password: newPw });
       alert(error ? 'Could not reset: ' + error.message : `Done. Give ${p.name} this password: ${newPw}\nThey can change it later with the 🔑 Password button.`);
@@ -922,13 +922,13 @@ document.getElementById('addPersonBtn') && (document.getElementById('addPersonBt
     <div class="divider"></div>
     <input id="newPName" placeholder="Name" style="margin-bottom:8px;" />
     <input id="newPRole" placeholder="Role (e.g. Junior artist)" style="margin-bottom:8px;" />
-    <input id="newPUser" placeholder="Username (lowercase, e.g. fida_junior)" style="margin-bottom:8px;" autocapitalize="none" />
-    <input id="newPPass" placeholder="Temporary password (min. 8 characters)" style="margin-bottom:8px;" />
+    <input id="newPUser" placeholder="Username (e.g. Fida)" style="margin-bottom:8px;" />
+    <input id="newPPass" placeholder="Temporary password (min. 6 characters)" style="margin-bottom:8px;" />
     <button class="btn-primary tap" id="savePersonBtn" style="width:100%;">Save person</button>`;
   document.getElementById('savePersonBtn').onclick = async () => {
     const name = document.getElementById('newPName').value.trim();
     const role = document.getElementById('newPRole').value.trim();
-    const username = document.getElementById('newPUser').value.trim().toLowerCase();
+    const username = document.getElementById('newPUser').value.trim();
     const password = document.getElementById('newPPass').value.trim();
     if (!name || !role || !username || !password) return;
     const access = {Clients:1, Bookings:2, Knowledge:1, 'Chit-chat':1};
@@ -1045,9 +1045,9 @@ applyLang();
 
 document.getElementById('logoutBtn').onclick = async () => { await sb.auth.signOut(); location.reload(); };
 document.getElementById('changePwBtn').onclick = async () => {
-  const pw = prompt('New password (min. 8 characters):');
+  const pw = prompt('New password (min. 6 characters):');
   if (!pw) return;
-  if (pw.length < 8){ alert('Password must be at least 8 characters.'); return; }
+  if (pw.length < 6){ alert('Password must be at least 6 characters.'); return; }
   const { error } = await sb.auth.updateUser({ password: pw });
   alert(error ? 'Could not change password: ' + error.message : 'Password changed.');
 };
