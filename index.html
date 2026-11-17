@@ -1987,10 +1987,11 @@ async function renderBkMonth(){
     const dt = new Date(d.date + 'T00:00:00'), past = d.date < today;
     return `<div style="display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px dotted var(--hairline); ${past ? 'opacity:.45;' : ''}">
       <div style="width:34px; text-align:center; flex:none;"><div style="font-size:15px;">${dt.getDate()}</div><div style="font-size:8.5px; letter-spacing:.12em; color:var(--muted); text-transform:uppercase;">${dt.toLocaleDateString('en-GB',{weekday:'short'})}</div></div>
-      <div style="display:flex; flex-wrap:wrap; gap:5px; flex:1;">${(d.slots||[]).map(sl => {
-        const t = sl.time.replace(':','.');
+      <div style="display:flex; flex-wrap:wrap; gap:5px; flex:1;">${(d.slots||[]).map((sl, si, arr) => {
+        const t = sl.time.replace(':','.'), sep = si && arr[si-1].group !== sl.group ? '<span style="width:1px; background:var(--hairline); align-self:stretch; margin:0 2px;"></span>' : '';
+        return sep + (() => {
         if (sl.booked) return `<span title="${esc(sl.booked.client||'')} ${sl.booked.start}–${sl.booked.end}" style="background:var(--text); color:var(--bg); border-radius:8px; padding:5px 7px; font-size:11.5px; text-decoration:line-through; line-height:1.1; text-align:center;">${t}<br><span style="font-size:8px; text-decoration:none; display:inline-block;">${esc((sl.booked.client||'booked').split(' ')[0])}</span></span>`;
-        return `<button class="tap" ${past ? 'disabled' : ''} data-bkslot="${sl.time}" data-date="${d.date}" data-open="${sl.open ? 1 : 0}" style="border:1px solid ${sl.open ? 'var(--text)' : 'var(--hairline)'}; background:transparent; color:${sl.open ? 'var(--text)' : 'var(--muted)'}; border-radius:8px; padding:6px 8px; font-size:12px; font-weight:${sl.open ? 600 : 400}; text-decoration:${sl.open ? 'none' : 'line-through'}; cursor:pointer;">${t}${sl.default ? '' : '<sup style="font-size:7px;"> +</sup>'}</button>`; }).join('')}</div>
+        return `<button class="tap" ${past ? 'disabled' : ''} data-bkslot="${sl.time}" data-date="${d.date}" data-open="${sl.open ? 1 : 0}" style="border:1px solid ${sl.open ? 'var(--text)' : 'var(--hairline)'}; background:transparent; color:${sl.open ? 'var(--text)' : 'var(--muted)'}; border-radius:8px; padding:6px 8px; font-size:12px; font-weight:${sl.open ? 600 : 400}; text-decoration:${sl.open ? 'none' : 'line-through'}; cursor:pointer;">${t}${sl.default ? '' : '<sup style="font-size:7px;"> +</sup>'}</button>`; })(); }).join('')}</div>
       ${past ? '' : `<span style="display:flex; flex-direction:column; align-items:center; gap:2px; flex:none;"><span class="tap" data-bkadd="${d.date}" title="Open another time" style="cursor:pointer; color:var(--muted); font-size:15px; line-height:1; padding:0 4px;">＋</span><span class="tap" data-bkcloseday="${d.date}" title="Close the whole day" style="cursor:pointer; color:var(--muted); font-size:14px; line-height:1; padding:0 4px;">⊘</span></span>`}</div>`; }).join('') + '</div>'
     : '<div style="font-size:11.5px; color:var(--muted);">No booking days this month.</div>';
 }
@@ -2010,6 +2011,7 @@ function bookAddFormHtml(){
 document.getElementById('bkSchArtist').onchange = () => { renderBkMonth(); document.getElementById('bkAddForm').innerHTML = ''; };
 document.getElementById('bkMPrev').onclick = () => { BK_MONTH.m--; if (BK_MONTH.m < 0){ BK_MONTH.m = 11; BK_MONTH.y--; } renderBkMonth(); };
 document.getElementById('bkMNext').onclick = () => { BK_MONTH.m++; if (BK_MONTH.m > 11){ BK_MONTH.m = 0; BK_MONTH.y++; } renderBkMonth(); };
+function sessionsText(sess){ return (sess||[]).map(g => g.map(t => t.endsWith(':00') ? t.slice(0,2) : t.replace(':','.')).join('/')).join(', '); }
 async function bkInstagram(){
   const artist = people.find(p => p.id === document.getElementById('bkSchArtist').value); if (!artist) return;
   const first = `${BK_MONTH.y}-${String(BK_MONTH.m+1).padStart(2,'0')}-01`;
@@ -2021,26 +2023,31 @@ async function bkInstagram(){
   const W = 1080, H = 1920, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
   const F = n => `${n}px "Gilda Display", Georgia, serif`;
   const spaced = (txt, x, y, size, gap) => { g.font = F(size); const w = [...txt].reduce((t,ch) => t + g.measureText(ch).width + gap, -gap); let cx = x - w/2; g.textAlign = 'left'; for (const ch of txt){ g.fillText(ch, cx, y); cx += g.measureText(ch).width + gap; } };
-  g.fillStyle = '#EDE1D8'; g.fillRect(0, 0, W, H);
-  g.fillStyle = '#141414'; g.textBaseline = 'alphabetic';
-  spaced(`${MONTH_NAMES[BK_MONTH.m]} ${BK_MONTH.y}`, W/2, 178, 64, 26);
   const isOwner = artist.role === 'Owner';
-  spaced(isOwner ? 'By NG' : `By Team-${artist.name}`, W/2, 252, 34, 11);
-  spaced(isOwner ? '(Owner)' : artist.role === 'Senior artist' ? '(Senior nail artist)' : '(Junior nail artist)', W/2, 290, 34, 11);
-  const cx0 = 118, cy0 = 335, cw = 844, chh = 1515, r = 60;
-  g.fillStyle = '#FAF8F6'; g.beginPath(); g.moveTo(cx0+r, cy0); g.arcTo(cx0+cw, cy0, cx0+cw, cy0+chh, r); g.arcTo(cx0+cw, cy0+chh, cx0, cy0+chh, r); g.arcTo(cx0, cy0+chh, cx0, cy0, r); g.arcTo(cx0, cy0, cx0+cw, cy0, r); g.closePath(); g.fill();
-  const cols = Math.max(...days.map(d => d.slots.length)), top = cy0 + 70, bottom = cy0 + chh - 70;
-  const rowH = Math.min(86, (bottom - top) / days.length), size = Math.max(22, Math.min(34, rowH * 0.42, cols > 3 ? 34 - (cols-3)*4 : 34));
-  const dateX = 205, colL = 290, colR = 900, colW = (colR - colL) / cols;
+  g.fillStyle = isOwner ? '#BEAA9C' : '#EBE2D8'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#141414'; g.textBaseline = 'alphabetic';
+  spaced(`${MONTH_NAMES[BK_MONTH.m]} ${BK_MONTH.y}`, W/2, isOwner ? 300 : 300, 64, 26);
+  if (isOwner) spaced('By Natasya Gishelle', W/2, 378, 38, 14);
+  else { spaced(`By Team-${artist.name}`, W/2, 382, 34, 10); spaced(artist.role === 'Senior artist' ? '(Senior nail artist)' : '(Junior nail artist)', W/2, 418, 34, 10); }
+  const cx0 = 188, cy0 = 475, cw = 704, chh = 1225, r = 64;
+  g.fillStyle = isOwner ? '#F3EFEC' : '#FAF8F6'; g.beginPath(); g.moveTo(cx0+r, cy0); g.arcTo(cx0+cw, cy0, cx0+cw, cy0+chh, r); g.arcTo(cx0+cw, cy0+chh, cx0, cy0+chh, r); g.arcTo(cx0, cy0+chh, cx0, cy0, r); g.arcTo(cx0, cy0, cx0+cw, cy0, r); g.closePath(); g.fill();
+  const fmt = t => isOwner ? (t.endsWith(':00') ? t.slice(0,2) : t.replace(':','.')) : t.replace(':','.');
+  const cols = Math.max(...days.map(d => Math.max(d.sessions||0, ...d.slots.map(x => (x.group ?? 0) + 1))));
+  const top = cy0 + 55, bottom = cy0 + chh - 75, rowH = Math.min(72, (bottom - top) / days.length);
+  const size = Math.max(20, Math.min(30, rowH * 0.45));
+  const dateX = cx0 + 95, colL = cx0 + 165, colR = cx0 + cw - 40, colW = (colR - colL) / cols;
   g.fillStyle = '#141414';
   days.forEach((d, i) => {
-    const y = top + rowH * i + rowH * 0.55;
+    const y = top + rowH * i + rowH * 0.6;
     g.textAlign = 'center'; g.font = F(size); g.fillText(String(new Date(d.date + 'T00:00:00').getDate()), dateX, y);
-    d.slots.forEach((sl, k) => {
-      const x = colL + colW * k + colW/2, t = sl.time.replace(':','.');
+    for (let k = 0; k < cols; k++){
+      const cand = d.slots.filter(x => (x.group ?? 0) === k); if (!cand.length) continue;
+      const avail = cand.filter(x => x.open && !x.booked), taken = cand.filter(x => x.open && x.booked), defs = cand.filter(x => x.default);
+      const show = avail.length ? avail : taken.length ? taken : (defs.length ? defs : cand), struck = !avail.length;
+      const t = show.map(x => fmt(x.time)).join('/'), x = colL + colW * k + colW/2;
       g.fillText(t, x, y);
-      if (!sl.open || sl.booked){ const w = Math.min(colW - 14, g.measureText(t).width + 48); g.fillRect(x - w/2, y - size*0.33, w, 4); }
-    });
+      if (struck){ const w = Math.min(colW - 8, g.measureText(t).width + 40); g.fillRect(x - w/2, y - size*0.32, w, 3.5); }
+    }
   });
   const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
   const name = `Jadwal_${isOwner ? 'NG' : artist.name}_${MONTH_NAMES[BK_MONTH.m]}_${BK_MONTH.y}.png`;
@@ -2135,7 +2142,7 @@ if (document.getElementById('page-website')){
     <div style="display:grid; gap:8px; margin-top:10px;">
       <label style="font-size:10.5px; color:var(--muted);">Booking open until</label><input id="bkOpenUntil" type="date" />
       <div class="row" style="gap:6px;"><div style="flex:1;"><label style="font-size:10.5px; color:var(--muted);">DP owner</label><input id="bkDpOwner" type="number" /></div><div style="flex:1;"><label style="font-size:10.5px; color:var(--muted);">DP senior</label><input id="bkDpSenior" type="number" /></div><div style="flex:1;"><label style="font-size:10.5px; color:var(--muted);">DP junior</label><input id="bkDpJunior" type="number" /></div></div>
-      <div style="font-size:10.5px; color:var(--muted); margin-top:4px;">Usual times (comma separated) and working days per nail artist. The monthly schedule starts from these; open or close single times there.</div>
+      <div style="font-size:10.5px; color:var(--muted); margin-top:4px;">Usual sessions and working days per nail artist. Separate sessions with a comma; a slash means alternative start times in the same session, e.g. <b>08/09, 12/13, 16</b>. When one time in a session is booked, the others in that session close automatically.</div>
       <div id="bkArtistSlots"></div>
       <div style="font-size:10.5px; color:var(--muted); margin-top:4px;">Per service: duration in minutes, and below it the price estimate in thousands (e.g. 175-225) shown to clients — columns Owner / Senior / Junior. Empty duration = not offered with that level.</div>
       <div id="bkSvcTable"></div>
@@ -2145,7 +2152,7 @@ if (document.getElementById('page-website')){
     await loadBookCfg(); const c = BOOK_CFG || {};
     document.getElementById('bkOpenUntil').value = c.open_until || '';
     document.getElementById('bkArtistSlots').innerHTML = bookArtists().map(a => { const days = (c.artist_days||{})[a.id] || c.days || [2,3,4,5];
-      return `<div style="margin-bottom:10px;"><div class="row" style="gap:6px; align-items:center;"><span style="flex:1; font-size:11.5px; font-weight:600;">${esc(a.name)}</span><input class="bkASlots" data-id="${a.id}" value="${esc(((c.artist_slots||{})[a.id] || c.slots || []).map(t => t.replace(':','.')).join(', '))}" style="flex:2.6; font-size:12px; padding:7px 8px;" /></div>
+      return `<div style="margin-bottom:10px;"><div class="row" style="gap:6px; align-items:center;"><span style="flex:1; font-size:11.5px; font-weight:600;">${esc(a.name)}</span><input class="bkASlots" data-id="${a.id}" value="${esc(sessionsText((c.artist_sessions||{})[a.id] || ((c.artist_slots||{})[a.id] || c.slots || []).map(t => [t])))}" style="flex:2.6; font-size:12px; padding:7px 8px;" /></div>
         <div style="display:flex; gap:4px; margin-top:4px; justify-content:flex-end;">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((n,i) => `<label style="font-size:10px; display:flex; flex-direction:column; align-items:center; gap:2px;"><input type="checkbox" class="bkADay" data-id="${a.id}" value="${i+1}" ${days.includes(i+1)?'checked':''} style="width:auto;">${n}</label>`).join('')}</div></div>`; }).join('')
       + `<div class="row" style="gap:6px; align-items:center; margin-top:6px;"><span style="flex:2.6; font-size:11px; color:var(--muted);">Online booking closes the day before at (hour). Same-day & later → Instagram DM.</span><input id="bkCutoff" type="number" min="0" max="23" value="${c.cutoff_hour ?? 17}" style="flex:1; font-size:12px; padding:7px 8px;" /></div>`;
     document.getElementById('bkDpOwner').value = (c.dp||{}).owner || ''; document.getElementById('bkDpSenior').value = (c.dp||{}).senior || ''; document.getElementById('bkDpJunior').value = (c.dp||{}).junior || '';
@@ -2164,10 +2171,12 @@ if (document.getElementById('page-website')){
     bookArtists().forEach(a => { c.artist_days[a.id] = [...document.querySelectorAll(`.bkADay[data-id="${a.id}"]:checked`)].map(x => +x.value); });
     c.cutoff_hour = Math.min(23, Math.max(0, parseInt(document.getElementById('bkCutoff').value) || 17));
     c.artist_slots = c.artist_slots || {};
+    c.artist_sessions = c.artist_sessions || {};
     for (const i of document.querySelectorAll('.bkASlots')){
-      const list = i.value.split(/[,\s]+/).filter(Boolean).map(t => { const m = t.replace('.',':').match(/^(\d{1,2}):(\d{2})$/); return m ? m[1].padStart(2,'0') + ':' + m[2] : null; });
-      if (list.some(x => !x)) return alert('Times must look like 08.00, 12.30, 16.00');
-      c.artist_slots[i.dataset.id] = [...new Set(list)].sort();
+      const sess = i.value.split(',').map(x => x.trim()).filter(Boolean).map(g => g.split('/').map(t => { const m = t.trim().replace('.',':').match(/^(\d{1,2})(?::(\d{2}))?$/); return m ? m[1].padStart(2,'0') + ':' + (m[2]||'00') : null; }));
+      if (!sess.length || sess.some(g => g.some(x => !x))) return alert('Write sessions like: 08/09, 12/13, 16  (a slash = alternative start times in the same session)');
+      c.artist_sessions[i.dataset.id] = sess.map(g => [...new Set(g)].sort());
+      c.artist_slots[i.dataset.id] = [...new Set(sess.flat())].sort();
     }
     for (const i of document.querySelectorAll('.bkPrice')){
       const s = c.services.find(x => x.key === i.dataset.key); s.price = s.price || {};
