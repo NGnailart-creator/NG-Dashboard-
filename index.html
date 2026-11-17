@@ -213,7 +213,8 @@ let clients = []; // loaded from ngd_clients
 function mapClientRow(r){
   return { id:r.id, name:r.name, birthday:r.birthday||'—', visits:r.visits||0, last:r.last_visit||'—', artist:r.artist||'—',
     pref:r.pref||[], rating:r.rating||5, note:r.note||'',
-    sharedNote:r.shared_note || '', username:r.username||'', hasLogin:!!r.user_id, mustSetPin:!!r.must_set_pin, clientNote:r.client_note||'', birthdayRaw:r.birthday||'' };
+    sharedNote:r.shared_note || '', username:r.username||'', hasLogin:!!r.user_id, mustSetPin:!!r.must_set_pin, clientNote:r.client_note||'', birthdayRaw:r.birthday||'',
+    phone:r.phone||'', instagram:r.instagram||'', area:r.area||'', referral:r.referral||'', referralDetail:r.referral_detail||'', firstVisit:r.first_visit||'' };
 }
 function clientCardHtml(c){
   return `
@@ -268,41 +269,70 @@ document.getElementById('loggedInAsLine').innerHTML = isOwnerOrAdmin
 function renderClients(filter){
   const f = (filter||'').toLowerCase().trim();
   const scoped = isOwnerOrAdmin ? clients : clients.filter(c => c.artist.startsWith(currentUser.name));
-  const results = scoped.filter(c => !f || (c.name+' '+c.pref.join(' ')+' '+c.note+' '+c.sharedNote+' '+c.artist).toLowerCase().includes(f));
+  const results = scoped.filter(c => !f || (c.name+' '+c.pref.join(' ')+' '+c.note+' '+c.sharedNote+' '+c.artist+' '+(c.instagram||'')+' '+(c.area||'')+' '+(c.phone||'')+' '+(c.username||'')).toLowerCase().includes(f));
   document.getElementById('clientResults').innerHTML = results.length ? results.map(clientCardHtml).join('') : `<div class="card"><div style="font-size:12.5px; color:var(--muted);">No clients yet — add your first one below.</div></div>`;
 }
 document.getElementById('clientSearch').oninput = e => renderClients(e.target.value);
 document.getElementById('clientSearchBtn').onclick = () => renderClients(document.getElementById('clientSearch').value);
+const REFERRALS = ['Instagram','TikTok','Friend / family referral','Google Maps','Walk-in / passing by','Event / bazaar','Other'];
+function clientFormFields(c){
+  c = c || {};
+  const v = k => esc(c[k] ?? '');
+  return `
+      <input id="cfName" placeholder="Client name *" value="${v('name')}" />
+      <input id="cfPhone" placeholder="WhatsApp number" inputmode="tel" value="${v('phone')}" />
+      <input id="cfIg" placeholder="Instagram (e.g. @sarah.nails)" value="${v('instagram')}" autocapitalize="none" />
+      <input id="cfArea" placeholder="Area they live in (e.g. Lembang, Setiabudi)" value="${v('area')}" />
+      <label style="font-size:10.5px; color:var(--muted);">Birthday (for automatic birthday messages)</label>
+      <input id="cfBday" type="date" value="${/^\d{4}-\d{2}-\d{2}$/.test(c.birthdayRaw||'') ? c.birthdayRaw : ''}" />
+      <label style="font-size:10.5px; color:var(--muted);">How did they find us?</label>
+      <select id="cfRef"><option value="">—</option>${REFERRALS.map(r => `<option ${c.referral===r?'selected':''}>${r}</option>`).join('')}</select>
+      <input id="cfRefDetail" placeholder="Details (e.g. referred by Dina, which post…)" value="${v('referralDetail')}" />
+      <label style="font-size:10.5px; color:var(--muted);">Visits so far (for existing clients, e.g. 34 — 0 for new clients)</label>
+      <input id="cfVisits" type="number" min="0" inputmode="numeric" value="${c.visits ?? 0}" />
+      <label style="font-size:10.5px; color:var(--muted);">First visit date (optional)</label>
+      <input id="cfFirst" type="date" value="${v('firstVisit')}" />
+      <input id="cfArtist" placeholder="Main nail artist (e.g. Nayla)" value="${c.artist && c.artist !== '—' ? v('artist') : (currentUser.role==='Owner'||currentUser.role==='Admin' ? '' : esc(currentUser.name))}" />
+      <input id="cfPref" placeholder="Style preferences, comma separated" value="${esc((c.pref||[]).join(', '))}" />`;
+}
+function readClientForm(){
+  const g = id => document.getElementById(id).value.trim();
+  return { name: g('cfName'), phone: g('cfPhone') || null, instagram: g('cfIg') || null, area: g('cfArea') || null,
+    birthday: g('cfBday'), referral: g('cfRef') || null, referral_detail: g('cfRefDetail') || null,
+    visits: Math.max(0, parseInt(g('cfVisits')) || 0), first_visit: g('cfFirst') || null, artist: g('cfArtist'),
+    pref: g('cfPref').split(',').map(x => x.trim()).filter(Boolean) };
+}
 document.getElementById('addClientBtn').onclick = () => {
   document.getElementById('addClientForm').innerHTML = `
     <div class="divider"></div>
     <div style="display:grid; gap:8px;">
-      <input id="newClientName" placeholder="Client name" />
-      <label style="font-size:10.5px; color:var(--muted);">Birthday (for automatic birthday messages)</label>
-      <input id="newClientBirthday" type="date" />
-      <input id="newClientArtist" placeholder="Nail artist (e.g. Nayla (senior))" value="${currentUser.role==='Owner'||currentUser.role==='Admin' ? '' : currentUser.name}" />
-      <label style="font-size:10.5px; color:var(--muted);">Visits so far (for existing clients, e.g. 34 — leave 0 for new clients)</label>
-      <input id="newClientVisits" type="number" min="0" value="0" inputmode="numeric" />
-      <input id="newClientPref" placeholder="Style preferences, comma separated" />
+      ${clientFormFields(null)}
       <textarea id="newClientNote" placeholder="Notes" style="min-height:50px;"></textarea>
+      <label class="row" style="font-size:12px; gap:8px; align-items:flex-start;"><input type="checkbox" id="cfMakeLogin" style="width:auto; margin-top:2px;" /> <span>Also create their website login now (for a client who is here in the studio)</span></label>
+      <input id="cfUsername" placeholder="Website username (no spaces, e.g. Sarah)" style="display:none;" />
       <button class="btn-primary tap" id="saveNewClientBtn" style="width:100%;">Save client</button>
     </div>`;
+  document.getElementById('cfMakeLogin').onchange = e => {
+    const u = document.getElementById('cfUsername');
+    u.style.display = e.target.checked ? '' : 'none';
+    if (e.target.checked && !u.value) u.value = (document.getElementById('cfName').value.trim().split(' ')[0] || '');
+  };
   document.getElementById('saveNewClientBtn').onclick = async () => {
-    const name = document.getElementById('newClientName').value.trim();
-    if (!name) return;
-    const payload = {
-      name,
-      birthday: document.getElementById('newClientBirthday').value.trim(),
-      artist: document.getElementById('newClientArtist').value.trim(),
-      pref: document.getElementById('newClientPref').value.split(',').map(s=>s.trim()).filter(Boolean),
-      rating: 5, note: document.getElementById('newClientNote').value.trim(),
-      shared_note: '', visits: Math.max(0, parseInt(document.getElementById('newClientVisits').value)||0), last_visit: '', created_by: currentUser.id
-    };
+    const f = readClientForm();
+    if (!f.name) return alert('Client name is required.');
+    const makeLogin = document.getElementById('cfMakeLogin').checked;
+    const username = document.getElementById('cfUsername').value.trim();
+    if (makeLogin && !/^[A-Za-z0-9._]{3,30}$/.test(username)) return alert('Username: 3–30 letters/numbers, no spaces.');
+    const payload = { ...f, rating: 5, note: document.getElementById('newClientNote').value.trim(), shared_note: '', last_visit: '', created_by: currentUser.id };
     const { data, error } = await sb.from('ngd_clients').insert(payload).select().single();
     if (error){ alert('Could not save client: ' + error.message); return; }
-    clients.push(mapClientRow(data));
+    if (makeLogin){
+      const r = await sb.rpc('ngd_create_client_login', { p_client_id: data.id, p_username: username });
+      if (r.error) alert('Client saved, but the login was not created: ' + r.error.message);
+      else alert(`${f.name} saved.\n\nWebsite username: ${username}\nOne-time code: ${r.data}\n\nGive this code to the client. At first login they create their own 6-digit PIN.`);
+    }
     document.getElementById('addClientForm').innerHTML = '';
-    renderClients(document.getElementById('clientSearch').value);
+    await reloadClients();
   };
 };
 
@@ -1080,11 +1110,11 @@ function clientExtrasHtml(c){
   const nameOf = id => (people.find(p => p.id === id) || {}).name || 'Someone';
   return `
     <div class="divider"></div>
-    <div class="row" style="gap:6px; flex-wrap:wrap; margin-bottom:8px;">
-      <button class="btn-ghost tap" data-editname="${c.id}" style="font-size:10.5px; padding:6px 10px;">✏️ Edit name</button>
-      <button class="btn-ghost tap" data-editvisits="${c.id}" style="font-size:10.5px; padding:6px 10px;">✏️ Edit visit count</button>
-      <button class="btn-ghost tap" data-editbday="${c.id}" style="font-size:10.5px; padding:6px 10px;">✏️ Birthday</button>
+    <div style="font-size:11.5px; line-height:1.7; margin-bottom:8px;">
+      ${c.phone ? `📱 ${esc(c.phone)}<br>` : ''}${c.instagram ? `📷 ${esc(c.instagram)}<br>` : ''}${c.area ? `📍 ${esc(c.area)}<br>` : ''}${c.referral ? `🔎 Found us via ${esc(c.referral)}${c.referralDetail ? ' — ' + esc(c.referralDetail) : ''}<br>` : ''}${c.firstVisit ? `🗓 First visit ${esc(c.firstVisit)}` : ''}
     </div>
+    <button class="btn-ghost tap" data-editdetails="${c.id}" style="font-size:10.5px; padding:6px 10px; margin-bottom:8px;">✏️ Edit details & visit count</button>
+    <div id="edit-${c.id}"></div>
     <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">👤 Client website account</div>
     ${c.hasLogin ? `
       <div style="font-size:12.5px;">Username: <b>${esc(c.username)}</b> ${c.mustSetPin ? '<span class="tag">waiting for client to set PIN</span>' : '<span class="tag">active</span>'} <span class="tap" data-renamelogin="${c.id}" style="cursor:pointer; font-size:11px; color:var(--muted); text-decoration:underline;">edit</span></div>
@@ -1148,6 +1178,20 @@ document.addEventListener('click', async e => {
     const { error } = await sb.rpc('ngd_delete_client_login', { p_client_id: c.id });
     if (error) return alert(error.message);
     c.username = ''; c.hasLogin = false; c.mustSetPin = false; renderClients(document.getElementById('clientSearch').value);
+  }
+  if (t.dataset.editdetails){
+    const id = t.dataset.editdetails, box = document.getElementById('edit-' + id);
+    if (box.innerHTML){ box.innerHTML = ''; return; }
+    const c = clients.find(x => x.id === id);
+    box.innerHTML = `<div style="display:grid; gap:8px; margin-bottom:10px;">${clientFormFields(c)}<button class="btn-primary tap" data-savedetails="${id}">Save details</button></div>`;
+    return;
+  }
+  if (t.dataset.savedetails){
+    const f = readClientForm();
+    if (!f.name) return alert('Client name is required.');
+    const { error } = await sb.from('ngd_clients').update(f).eq('id', t.dataset.savedetails);
+    if (error) return alert('Could not save: ' + error.message);
+    await reloadClients(); return;
   }
   if (t.dataset.editname || t.dataset.editvisits || t.dataset.editbday || t.dataset.renamelogin){
     const id = t.dataset.editname || t.dataset.editvisits || t.dataset.editbday || t.dataset.renamelogin;
