@@ -281,6 +281,8 @@ document.getElementById('addClientBtn').onclick = () => {
       <label style="font-size:10.5px; color:var(--muted);">Birthday (for automatic birthday messages)</label>
       <input id="newClientBirthday" type="date" />
       <input id="newClientArtist" placeholder="Nail artist (e.g. Nayla (senior))" value="${currentUser.role==='Owner'||currentUser.role==='Admin' ? '' : currentUser.name}" />
+      <label style="font-size:10.5px; color:var(--muted);">Visits so far (for existing clients, e.g. 34 — leave 0 for new clients)</label>
+      <input id="newClientVisits" type="number" min="0" value="0" inputmode="numeric" />
       <input id="newClientPref" placeholder="Style preferences, comma separated" />
       <textarea id="newClientNote" placeholder="Notes" style="min-height:50px;"></textarea>
       <button class="btn-primary tap" id="saveNewClientBtn" style="width:100%;">Save client</button>
@@ -294,7 +296,7 @@ document.getElementById('addClientBtn').onclick = () => {
       artist: document.getElementById('newClientArtist').value.trim(),
       pref: document.getElementById('newClientPref').value.split(',').map(s=>s.trim()).filter(Boolean),
       rating: 5, note: document.getElementById('newClientNote').value.trim(),
-      shared_note: '', visits: 0, last_visit: '', created_by: currentUser.id
+      shared_note: '', visits: Math.max(0, parseInt(document.getElementById('newClientVisits').value)||0), last_visit: '', created_by: currentUser.id
     };
     const { data, error } = await sb.from('ngd_clients').insert(payload).select().single();
     if (error){ alert('Could not save client: ' + error.message); return; }
@@ -1078,9 +1080,14 @@ function clientExtrasHtml(c){
   const nameOf = id => (people.find(p => p.id === id) || {}).name || 'Someone';
   return `
     <div class="divider"></div>
+    <div class="row" style="gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+      <button class="btn-ghost tap" data-editname="${c.id}" style="font-size:10.5px; padding:6px 10px;">✏️ Edit name</button>
+      <button class="btn-ghost tap" data-editvisits="${c.id}" style="font-size:10.5px; padding:6px 10px;">✏️ Edit visit count</button>
+      <button class="btn-ghost tap" data-editbday="${c.id}" style="font-size:10.5px; padding:6px 10px;">✏️ Birthday</button>
+    </div>
     <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">👤 Client website account</div>
     ${c.hasLogin ? `
-      <div style="font-size:12.5px;">Username: <b>${esc(c.username)}</b> ${c.mustSetPin ? '<span class="tag">waiting for client to set PIN</span>' : '<span class="tag">active</span>'}</div>
+      <div style="font-size:12.5px;">Username: <b>${esc(c.username)}</b> ${c.mustSetPin ? '<span class="tag">waiting for client to set PIN</span>' : '<span class="tag">active</span>'} <span class="tap" data-renamelogin="${c.id}" style="cursor:pointer; font-size:11px; color:var(--muted); text-decoration:underline;">edit</span></div>
       ${isOwner ? `<div class="row" style="gap:6px; margin-top:6px;">
         <button class="btn-ghost tap" data-resetpin="${c.id}" style="font-size:10.5px; padding:6px 10px;">Reset PIN</button>
         <button class="btn-ghost tap" data-dellogin="${c.id}" style="font-size:10.5px; padding:6px 10px;">Delete username</button></div>` : ''}`
@@ -1141,6 +1148,26 @@ document.addEventListener('click', async e => {
     const { error } = await sb.rpc('ngd_delete_client_login', { p_client_id: c.id });
     if (error) return alert(error.message);
     c.username = ''; c.hasLogin = false; c.mustSetPin = false; renderClients(document.getElementById('clientSearch').value);
+  }
+  if (t.dataset.editname || t.dataset.editvisits || t.dataset.editbday || t.dataset.renamelogin){
+    const id = t.dataset.editname || t.dataset.editvisits || t.dataset.editbday || t.dataset.renamelogin;
+    const c = clients.find(x => x.id === id);
+    if (t.dataset.renamelogin){
+      const u = prompt('New username (no spaces):', c.username); if (!u || u.trim() === c.username) return;
+      const { error } = await sb.rpc('ngd_rename_client_login', { p_client_id: id, p_username: u.trim() });
+      if (error) return alert(error.message);
+      alert(`Username changed to ${u.trim()}. The client's PIN stays the same.`);
+    } else {
+      let patch = null;
+      if (t.dataset.editname){ const v = prompt('Client name:', c.name); if (!v || !v.trim()) return; patch = {name: v.trim()}; }
+      if (t.dataset.editvisits){ const v = prompt(`Total visits so far for ${c.name} (e.g. 34). The client's loyalty card updates right away:`, c.visits); if (v === null) return;
+        const n = parseInt(v); if (isNaN(n) || n < 0) return alert('Enter a number.'); patch = {visits: n}; }
+      if (t.dataset.editbday){ const v = prompt('Birthday as YYYY-MM-DD (e.g. 1998-03-14) or MM-DD (e.g. 03-14):', c.birthdayRaw); if (v === null) return;
+        if (v && !/^(\d{4}-)?\d{2}-\d{2}$/.test(v.trim())) return alert('Use YYYY-MM-DD or MM-DD.'); patch = {birthday: v.trim()}; }
+      const { error } = await sb.from('ngd_clients').update(patch).eq('id', id);
+      if (error) return alert(error.message);
+    }
+    await reloadClients(); return;
   }
   if (t.dataset.history){
     const box = document.getElementById('hist-' + t.dataset.history);
@@ -1252,7 +1279,8 @@ function openTreatmentForm(clientId){
       past = [...new Set((data||[]).flatMap(t => (t.items||[]).map(i => i.label)))];
       const c = clients.find(x => x.id === cid);
       const nextVisit = (c ? c.visits : 0) + 1;
-      document.getElementById('tfLoyalty').innerHTML = `This will be visit <b>${nextVisit}</b>.` + (LOYALTY[nextVisit] ? ` 🎁 <b>${LOYALTY[nextVisit]}</b> — put it in the discount fields.` : '');
+      const cycle = ((nextVisit - 1) % 10) + 1;
+      document.getElementById('tfLoyalty').innerHTML = `This will be visit <b>${nextVisit}</b> (stamp ${cycle} of 10).` + (LOYALTY[cycle] ? ` 🎁 <b>${LOYALTY[cycle].replace(/visit \d+/, 'stamp ' + cycle)}</b> — put it in the discount fields.` : '');
     }
     window._tfSheet = sheet;
     document.getElementById('tfItemsList').innerHTML =
