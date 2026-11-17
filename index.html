@@ -1404,7 +1404,7 @@ pages.insertAdjacentHTML('beforeend', `
   <div class="card">
     <div class="eyebrow">Client website</div>
     <div class="title">Color gallery</div>
-    <div style="font-size:11px; color:var(--muted); margin-top:6px;">Photos are compressed automatically (sharp on phones, small file) and appear on the client website.</div>
+    <div style="font-size:11px; color:var(--muted); margin-top:6px;">Upload photos straight from your phone (HD is fine) — they are compressed automatically and appear on the client website.</div>
     <div style="display:grid; gap:8px; margin-top:10px;">
       <div class="row" style="gap:6px;"><input id="colCode" placeholder="Code (e.g. NG 12)" style="flex:1;" /><input id="colName" placeholder="Name (optional)" style="flex:1.4;" /></div>
       <input id="colFile" type="file" accept="image/*" />
@@ -1413,19 +1413,29 @@ pages.insertAdjacentHTML('beforeend', `
   </div>
   <div id="colGrid" style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;"></div>
 </div>`);
-function resizeImage(file, maxSide, quality){
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const k = Math.min(1, maxSide / Math.max(img.width, img.height));
-      const cv = document.createElement('canvas'); cv.width = Math.round(img.width*k); cv.height = Math.round(img.height*k);
-      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-      cv.toBlob(b => b ? resolve(b) : reject(new Error('Could not compress')), 'image/webp', quality);
-    };
-    img.onerror = () => reject(new Error('Could not read this image'));
-    img.src = URL.createObjectURL(file);
-  });
+// Compress any photo (HD, iPhone HEIC-converted, etc.) in the browser before upload.
+// Uses WebP where the browser supports it, otherwise JPEG (iPhone Safari), and keeps shrinking until under the size limit.
+const MAX_UPLOAD = 900 * 1024;
+function loadImg(file){
+  return new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = () => rej(new Error('Could not read this image')); img.src = URL.createObjectURL(file); });
 }
+function canvasBlob(cv, type, q){ return new Promise(res => cv.toBlob(b => res(b), type, q)); }
+async function resizeImage(file, maxSide, quality){
+  const img = await loadImg(file);
+  let side = maxSide, q = quality;
+  for (let attempt = 0; attempt < 6; attempt++){
+    const k = Math.min(1, side / Math.max(img.width, img.height));
+    const cv = document.createElement('canvas'); cv.width = Math.round(img.width*k); cv.height = Math.round(img.height*k);
+    const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(img, 0, 0, cv.width, cv.height);
+    let b = await canvasBlob(cv, 'image/webp', q);
+    if (!b || b.type !== 'image/webp') b = await canvasBlob(cv, 'image/jpeg', q);
+    if (!b) throw new Error('Could not compress this photo');
+    if (b.size <= MAX_UPLOAD) return b;
+    q = Math.max(0.6, q - 0.08); side = Math.round(side * 0.85);
+  }
+  throw new Error('This photo is too large even after compressing');
+}
+const extFor = b => b.type === 'image/webp' ? 'webp' : 'jpg';
 async function loadColors(){
   const { data } = await sb.from('ngd_colors').select('*').order('sort_order').order('created_at');
   COLORS = data || [];
@@ -1442,9 +1452,9 @@ document.getElementById('colSave').onclick = async () => {
   try {
     const id = crypto.randomUUID();
     const full = await resizeImage(file, 1200, 0.82), thumb = await resizeImage(file, 400, 0.72);
-    const p1 = `colors/${id}.webp`, p2 = `colors/${id}_t.webp`;
-    let r = await sb.storage.from(COLOR_BUCKET).upload(p1, full, {contentType:'image/webp'}); if (r.error) throw r.error;
-    r = await sb.storage.from(COLOR_BUCKET).upload(p2, thumb, {contentType:'image/webp'}); if (r.error) throw r.error;
+    const p1 = `colors/${id}.${extFor(full)}`, p2 = `colors/${id}_t.${extFor(thumb)}`;
+    let r = await sb.storage.from(COLOR_BUCKET).upload(p1, full, {contentType:full.type}); if (r.error) throw r.error;
+    r = await sb.storage.from(COLOR_BUCKET).upload(p2, thumb, {contentType:thumb.type}); if (r.error) throw r.error;
     const ins = await sb.from('ngd_colors').insert({code, name: document.getElementById('colName').value.trim() || null, image_path:p1, thumb_path:p2, added_by: currentUser.id, sort_order: COLORS.length});
     if (ins.error) throw ins.error;
     document.getElementById('colCode').value = ''; document.getElementById('colName').value = ''; document.getElementById('colFile').value = '';
@@ -1761,14 +1771,16 @@ function openSetEditor(tid){
   document.getElementById('setSend').onclick = async () => {
     if (!files.length) return alert('Add at least one photo.');
     const btn = document.getElementById('setSend'); btn.disabled = true; btn.textContent = 'Sending…';
+    let draftId = null;
     try {
       const ins = await sb.from('ngd_sets').insert({treatment_id:t.id, client_id:t.client_id, created_by:currentUser.id, title:document.getElementById('setTitle').value.trim() || null}).select().single();
       if (ins.error) throw ins.error;
+      draftId = ins.data.id;
       const paths = [];
       for (let i = 0; i < files.length; i++){
         const blob = await resizeImage(files[i].file, 1440, 0.85);
-        const path = `sets/${ins.data.id}/${i+1}.webp`;
-        const up = await sb.storage.from(SET_BUCKET).upload(path, blob, {contentType:'image/webp', upsert:true});
+        const path = `sets/${ins.data.id}/${i+1}.${extFor(blob)}`;
+        const up = await sb.storage.from(SET_BUCKET).upload(path, blob, {contentType:blob.type, upsert:true});
         if (up.error) throw up.error;
         paths.push(path);
       }
@@ -1779,7 +1791,10 @@ function openSetEditor(tid){
       ov.remove();
       alert(`Sent to ${client.name} ♡\nIt shows on their page as a notification. Photos stay until ${new Date(snd.data).toLocaleString('id-ID')}.${client.hasLogin ? '' : '\n\nNote: this client has no website login yet — create one so they can see it.'}`);
       await loadSets(); await loadTreatments();
-    } catch(err){ btn.disabled = false; btn.textContent = 'Send to ' + client.name; alert('Could not send: ' + err.message); }
+    } catch(err){
+      if (draftId){ const pre = `sets/${draftId}/`; await sb.storage.from(SET_BUCKET).remove([1,2,3].flatMap(n => [pre+n+'.webp', pre+n+'.jpg'])); await sb.from('ngd_sets').delete().eq('id', draftId); }
+      btn.disabled = false; btn.textContent = 'Send to ' + client.name; alert('Could not send: ' + err.message);
+    }
   };
 }
 document.addEventListener('click', e => { const id = e.target.dataset && e.target.dataset.mkset; if (id) openSetEditor(id); });
