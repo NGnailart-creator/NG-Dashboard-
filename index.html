@@ -1168,7 +1168,8 @@ function clientExtrasHtml(c){
     ${others.map(n => `<div style="font-size:12px; background:var(--tint); border-radius:10px; padding:8px 10px; margin-top:6px;"><b>${esc(nameOf(n.author_id))}</b> (private): ${esc(n.note)}</div>`).join('')}
     <div style="font-size:11px; color:var(--muted); margin:10px 0 6px;">📌 Shared note — the whole team can see this</div>
     <textarea data-snote="${c.id}" placeholder="Shared note..." style="min-height:44px;">${esc(c.sharedNote)}</textarea>
-    <button class="btn-primary tap" data-newtreat="${c.id}" style="width:100%; margin-top:10px;">+ Log treatment</button>`;
+    <button class="btn-primary tap" data-newtreat="${c.id}" style="width:100%; margin-top:10px;">+ Log treatment</button>
+    <button class="btn-ghost tap" data-bookfor="${c.id}" style="width:100%; margin-top:6px;">📅 Book an appointment for ${esc(c.name)}</button>`;
 }
 
 document.addEventListener('change', async e => {
@@ -1890,6 +1891,7 @@ calPage.firstElementChild.insertAdjacentHTML('afterend', `
     <div style="display:flex; gap:12px; justify-content:center; font-size:9.5px; color:var(--muted); margin:6px 0 2px;">
       <span><b style="font-weight:600; color:var(--text);">08.00</b> open</span><span style="text-decoration:line-through;">08.00</span> closed<span><span style="background:var(--text); color:var(--bg); border-radius:4px; padding:0 4px; text-decoration:line-through;">08.00</span> booked</span>
     </div>
+    <div id="bkEditBar" style="margin-top:8px;"></div>
     <div id="bkMonth" style="margin-top:6px;"></div>
     <button class="btn-primary tap" id="bkIgBtn" style="width:100%; margin-top:10px;">⬇ Download schedule for Instagram</button>
     <div class="row" style="gap:6px; margin-top:8px;">
@@ -1906,6 +1908,13 @@ calPage.firstElementChild.insertAdjacentHTML('afterend', `
   <div class="card"><div class="eyebrow">Next 30 days</div><div class="title" style="font-size:15px;">Upcoming confirmed</div><div id="bkUpList" style="margin-top:8px;"></div></div>`);
 
 async function loadBookCfg(){ const { data } = await sb.from('ngd_site').select('value').eq('key','booking').maybeSingle(); BOOK_CFG = data ? data.value : null; }
+async function reloadCal(){
+  const { data } = await sb.from('ngd_bookings').select('*').order('booking_date');
+  CAL_BOOKINGS = {};
+  (data||[]).forEach(b => { const d = new Date(b.booking_date + 'T00:00:00'), key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    (CAL_BOOKINGS[key] = CAL_BOOKINGS[key] || []).push({ id:b.id, client:b.client_name, artist:b.artist, time:b.booking_time, service:b.service, status:b.status, group:b.is_group, people:b.people||[] }); });
+  try { renderCalGrid(); showCalDay(); } catch(_) {}
+}
 async function loadAppts(){
   const { data } = await sb.from('ngd_appointments').select('*').gte('appt_date', todayISO()).order('appt_date').order('start_min');
   const now = new Date();
@@ -1956,6 +1965,18 @@ function renderBkUpcoming(){
 let BK_MONTH = (() => { const d = new Date(); return {y:d.getFullYear(), m:d.getMonth()}; })();
 const bkArtistName = () => (people.find(p => p.id === document.getElementById('bkSchArtist').value) || {}).name || '';
 async function renderBkDay(){ return renderBkMonth(); }
+let BK_MDATA = [], BK_EDIT = false, BK_PEND = new Map();
+const canBulkEdit = () => { const a = document.getElementById('bkSchArtist').value; return isOwner || (a === currentUser.id && ['Senior artist','Junior artist'].includes(currentUser.role)); };
+function bkEditBar(){
+  const bar = document.getElementById('bkEditBar'); if (!bar) return;
+  if (!canBulkEdit()){ bar.innerHTML = ''; BK_EDIT = false; BK_PEND.clear(); return; }
+  bar.innerHTML = BK_EDIT
+    ? `<div style="background:var(--text); color:var(--bg); border-radius:14px; padding:10px 12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <span style="flex:1; font-size:11.5px;">✎ Editing the whole month — tap times to open/close. <b>${BK_PEND.size}</b> change${BK_PEND.size === 1 ? '' : 's'}</span>
+        <button class="tap" id="bkEditDiscard" style="background:transparent; color:var(--bg); border:1px solid var(--bg); border-radius:20px; padding:6px 12px; font-size:11px;">Discard</button>
+        <button class="tap" id="bkEditSave" style="background:var(--bg); color:var(--text); border:0; border-radius:20px; padding:6px 14px; font-size:11px; font-weight:600;" ${BK_PEND.size ? '' : 'disabled'}>Save</button></div>`
+    : `<button class="btn-ghost tap" id="bkEditStart" style="width:100%; font-size:11px;">✎ Edit whole month (no confirmation for each tap)</button>`;
+}
 async function renderBkMonth(){
   const artist = document.getElementById('bkSchArtist').value, box = document.getElementById('bkMonth');
   document.getElementById('bkMLabel').textContent = MONTH_NAMES[BK_MONTH.m] + ' ' + BK_MONTH.y;
@@ -1963,7 +1984,14 @@ async function renderBkMonth(){
   const first = `${BK_MONTH.y}-${String(BK_MONTH.m+1).padStart(2,'0')}-01`;
   const { data, error } = await sb.rpc('ngd_team_month', { p_artist: artist, p_month: first });
   if (error){ box.innerHTML = `<div style="font-size:11px; color:#B0566A;">${esc(error.message)}</div>`; return; }
-  const today = todayISO();
+  BK_MDATA = data || []; drawBkMonth();
+}
+function drawBkMonth(){
+  const box = document.getElementById('bkMonth'), today = todayISO();
+  bkEditBar();
+  const data = BK_MDATA.map(d => { const slots = (d.slots||[]).map(sl => { const k = d.date + '|' + sl.time; return BK_PEND.has(k) ? { ...sl, open: BK_PEND.get(k), pend: true } : sl; });
+    for (const [k, v] of BK_PEND){ const [dd, tt] = k.split('|'); if (dd === d.date && v && !slots.some(x => x.time === tt)){ const g = slots.filter(x => x.time < tt).map(x => x.group).pop() ?? 0; slots.push({ time: tt, open: true, default: false, group: g, pend: true }); } }
+    slots.sort((a,b) => a.time < b.time ? -1 : 1); return { ...d, slots }; });
   box.innerHTML = (data||[]).length ? `<div style="background:var(--surface,#fff); border:1px solid var(--hairline); border-radius:16px; padding:6px 10px;">` + data.map(d => {
     const dt = new Date(d.date + 'T00:00:00'), past = d.date < today;
     return `<div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:7px 0; border-bottom:1px dotted var(--hairline); ${past ? 'opacity:.45;' : ''}">
@@ -1972,7 +2000,7 @@ async function renderBkMonth(){
         const t = sl.time.replace(':','.'), sep = si && arr[si-1].group !== sl.group ? '<span style="width:1px; background:var(--hairline); align-self:stretch; margin:0 2px;"></span>' : '';
         return sep + (() => {
         if (sl.booked) return `<span title="${esc(sl.booked.client||'')} ${sl.booked.start}–${sl.booked.end}" style="background:var(--text); color:var(--bg); border-radius:8px; padding:5px 7px; font-size:11.5px; text-decoration:line-through; line-height:1.1; text-align:center;">${t}<br><span style="font-size:8px; text-decoration:none; display:inline-block;">${esc((sl.booked.client||'booked').split(' ')[0])}</span></span>`;
-        return `<button class="tap" ${past ? 'disabled' : ''} data-bkslot="${sl.time}" data-date="${d.date}" data-open="${sl.open ? 1 : 0}" style="border:1px solid ${sl.open ? 'var(--text)' : 'var(--hairline)'}; background:transparent; color:${sl.open ? 'var(--text)' : 'var(--muted)'}; border-radius:8px; padding:6px 8px; font-size:12px; font-weight:${sl.open ? 600 : 400}; text-decoration:${sl.open ? 'none' : 'line-through'}; cursor:pointer;">${t}${sl.default ? '' : '<sup style="font-size:7px;"> +</sup>'}</button>`; })(); }).join('')}</div>
+        return `<button class="tap" ${past ? 'disabled' : ''} data-bkslot="${sl.time}" data-date="${d.date}" data-open="${sl.open ? 1 : 0}" style="outline:${sl.pend ? '2px dashed #B0566A' : 'none'}; outline-offset:1px; border:1px solid ${sl.open ? 'var(--text)' : 'var(--hairline)'}; background:transparent; color:${sl.open ? 'var(--text)' : 'var(--muted)'}; border-radius:8px; padding:6px 8px; font-size:12px; font-weight:${sl.open ? 600 : 400}; text-decoration:${sl.open ? 'none' : 'line-through'}; cursor:pointer;">${t}${sl.default ? '' : '<sup style="font-size:7px;"> +</sup>'}</button>`; })(); }).join('')}</div>
       ${past ? '' : `<span style="display:flex; flex-direction:column; align-items:center; gap:2px; flex:none;"><span class="tap" data-bkadd="${d.date}" title="Open another time" style="cursor:pointer; color:var(--muted); font-size:15px; line-height:1; padding:0 4px;">＋</span><span class="tap" data-bkcloseday="${d.date}" title="Close the whole day" style="cursor:pointer; color:var(--muted); font-size:14px; line-height:1; padding:0 4px;">⊘</span></span>`}${(d.cancelled||[]).length ? `<div style="flex-basis:100%; font-size:10px; color:#B0566A; padding-left:42px;">${d.cancelled.map(x => `↩ ${esc(x.client||'')} ${x.time} — ${x.kind === 'reschedule' ? 'cancelled to reschedule' : 'cancelled'} by ${x.by === 'team' ? 'team' : 'client'} · ${new Date(x.at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}`).join('<br>')}</div>` : ''}</div>`; }).join('') + '</div>'
     : '<div style="font-size:11.5px; color:var(--muted);">No booking days this month.</div>';
 }
@@ -1989,9 +2017,9 @@ function bookAddFormHtml(){
     <textarea id="bkfNote" placeholder="Note (optional)" style="min-height:40px;"></textarea>
     <button class="btn-primary tap" id="bkfSave">Save booking</button></div>`;
 }
-document.getElementById('bkSchArtist').onchange = () => { renderBkMonth(); document.getElementById('bkAddForm').innerHTML = ''; };
-document.getElementById('bkMPrev').onclick = () => { BK_MONTH.m--; if (BK_MONTH.m < 0){ BK_MONTH.m = 11; BK_MONTH.y--; } renderBkMonth(); };
-document.getElementById('bkMNext').onclick = () => { BK_MONTH.m++; if (BK_MONTH.m > 11){ BK_MONTH.m = 0; BK_MONTH.y++; } renderBkMonth(); };
+document.getElementById('bkSchArtist').onchange = () => { if (BK_EDIT && BK_PEND.size && !confirm('Discard unsaved schedule changes?')) return; BK_EDIT = false; BK_PEND.clear(); renderBkMonth(); document.getElementById('bkAddForm').innerHTML = ''; };
+document.getElementById('bkMPrev').onclick = () => { if (BK_EDIT && BK_PEND.size && !confirm('Discard unsaved schedule changes?')) return; BK_EDIT = false; BK_PEND.clear(); BK_MONTH.m--; if (BK_MONTH.m < 0){ BK_MONTH.m = 11; BK_MONTH.y--; } renderBkMonth(); };
+document.getElementById('bkMNext').onclick = () => { if (BK_EDIT && BK_PEND.size && !confirm('Discard unsaved schedule changes?')) return; BK_EDIT = false; BK_PEND.clear(); BK_MONTH.m++; if (BK_MONTH.m > 11){ BK_MONTH.m = 0; BK_MONTH.y++; } renderBkMonth(); };
 function sessionsText(sess){ return (sess||[]).map(g => g.map(t => t.endsWith(':00') ? t.slice(0,2) : t.replace(':','.')).join('/')).join(', '); }
 async function bkInstagram(){
   const artist = people.find(p => p.id === document.getElementById('bkSchArtist').value); if (!artist) return;
@@ -2089,10 +2117,25 @@ async function bkToggle(date, time, open){
 }
 document.addEventListener('click', async e => {
   const sl = e.target.closest('[data-bkslot]');
+  if (sl && BK_EDIT){ const k = sl.dataset.date + '|' + sl.dataset.bkslot, base = BK_MDATA.find(d => d.date === sl.dataset.date), orig = base && (base.slots||[]).find(x => x.time === sl.dataset.bkslot);
+    const nv = sl.dataset.open !== '1'; if (orig && orig.open === nv) BK_PEND.delete(k); else if (!orig && !nv) BK_PEND.delete(k); else BK_PEND.set(k, nv); return drawBkMonth(); }
   if (sl) return bkToggle(sl.dataset.date, sl.dataset.bkslot, sl.dataset.open !== '1');
+  if (e.target.id === 'bkEditStart'){ BK_EDIT = true; BK_PEND.clear(); return drawBkMonth(); }
+  if (e.target.id === 'bkEditDiscard'){ if (BK_PEND.size && !confirm('Discard your unsaved changes?')) return; BK_EDIT = false; BK_PEND.clear(); return drawBkMonth(); }
+  if (e.target.id === 'bkEditSave'){
+    const changes = [...BK_PEND].map(([k, v]) => { const [date, time] = k.split('|'); return { date, time, open: v }; });
+    const nC = changes.filter(c => !c.open).length, nO = changes.length - nC;
+    if (!confirm(`Save ${changes.length} change${changes.length === 1 ? '' : 's'} to ${bkArtistName()}'s schedule?\n${nC} closed · ${nO} opened`)) return;
+    const { data, error } = await sb.rpc('ngd_set_slots_batch', { p_artist: document.getElementById('bkSchArtist').value, p_changes: changes });
+    if (error) return alert(error.message);
+    if (data < changes.length) alert(`${changes.length - data} change(s) were skipped (past dates or times that already have a booking).`);
+    BK_EDIT = false; BK_PEND.clear(); return renderBkMonth(); }
   const gc = e.target.closest('[data-gcal]'); if (gc) return openGcal(gc.dataset.gcal);
   if (e.target.id === 'bkIgBtn'){ e.target.disabled = true; try { await bkInstagram(); } finally { e.target.disabled = false; } return; }
   const cd = e.target.closest('[data-bkcloseday]');
+  if (cd && BK_EDIT){ const d = BK_MDATA.find(x => x.date === cd.dataset.bkcloseday); (d && d.slots || []).forEach(sl => { if (!sl.booked){ const k = d.date + '|' + sl.time; if (sl.open) BK_PEND.set(k, false); else BK_PEND.delete(k); } });
+    for (const k of [...BK_PEND.keys()]) if (k.startsWith(cd.dataset.bkcloseday + '|') && BK_PEND.get(k) && !(d.slots||[]).some(x => d.date + '|' + x.time === k)) BK_PEND.delete(k);
+    return drawBkMonth(); }
   if (cd) return bkBulk(cd.dataset.bkcloseday, cd.dataset.bkcloseday, false);
   if (e.target.id === 'bkCloseMonth' || e.target.id === 'bkOpenMonth'){
     const from = `${BK_MONTH.y}-${String(BK_MONTH.m+1).padStart(2,'0')}-01`, last = new Date(BK_MONTH.y, BK_MONTH.m+1, 0).getDate();
@@ -2101,7 +2144,9 @@ document.addEventListener('click', async e => {
   const ad = e.target.closest('[data-bkadd]');
   if (ad){ const t = prompt(`Open another time on ${dayLabel(ad.dataset.bkadd)} for ${bkArtistName()} (e.g. 12:30):`); if (!t) return;
     const m = t.trim().replace('.',':').match(/^(\d{1,2}):(\d{2})$/); if (!m) return alert('Use the format 12:30');
-    return bkToggle(ad.dataset.bkadd, m[1].padStart(2,'0') + ':' + m[2], true); }
+    const tt = m[1].padStart(2,'0') + ':' + m[2];
+    if (BK_EDIT){ BK_PEND.set(ad.dataset.bkadd + '|' + tt, true); return drawBkMonth(); }
+    return bkToggle(ad.dataset.bkadd, tt, true); }
   if (e.target.id === 'bkExtraBtn'){ const d = document.getElementById('bkExtraDate').value, t = document.getElementById('bkExtraTime').value; if (!d || !t) return alert('Choose a date and time first.');
     await bkToggle(d, t, true); document.getElementById('bkExtraTime').value = ''; return; }
   if (e.target.id === 'bkAddBtn'){ if (!BOOK_CFG) await loadBookCfg(); document.getElementById('bkAddForm').innerHTML = bookAddFormHtml(); return; }
@@ -2116,17 +2161,17 @@ document.addEventListener('click', async e => {
       r = await sb.rpc('ngd_team_book', { ...p, p_force: true });
     }
     if (r.error) return alert('Could not save: ' + r.error.message);
-    document.getElementById('bkAddForm').innerHTML = ''; renderBkDay(); loadAppts(); return;
+    document.getElementById('bkAddForm').innerHTML = ''; renderBkMonth(); loadAppts(); reloadCal(); alert('Booking saved. It now shows in the schedule, the calendar and (if the client has an account) on their website.'); return;
   }
   const ok = e.target.closest('[data-bkok]');
   if (ok){ if (!confirm('Approve this booking? The client will see it as confirmed.')) return;
-    const { error } = await sb.rpc('ngd_decide_booking', { p_id: ok.dataset.bkok, p_approve: true }); if (error) return alert(error.message); loadAppts(); renderBkDay(); return; }
+    const { error } = await sb.rpc('ngd_decide_booking', { p_id: ok.dataset.bkok, p_approve: true }); if (error) return alert(error.message); loadAppts(); renderBkMonth(); reloadCal(); return; }
   const no = e.target.closest('[data-bkno]');
   if (no){ const reason = prompt('Reason for the client (e.g. DP amount does not match, please DM us):'); if (reason === null) return;
     const { error } = await sb.rpc('ngd_decide_booking', { p_id: no.dataset.bkno, p_approve: false, p_reason: reason }); if (error) return alert(error.message); loadAppts(); renderBkDay(); return; }
   const cx = e.target.closest('[data-bkcancel]');
   if (cx){ const reason = prompt('Cancel this confirmed booking? Reason shown to the client (optional):'); if (reason === null) return;
-    const { error } = await sb.rpc('ngd_team_cancel_booking', { p_id: cx.dataset.bkcancel, p_reason: reason }); if (error) return alert(error.message); loadAppts(); renderBkDay(); return; }
+    const { error } = await sb.rpc('ngd_team_cancel_booking', { p_id: cx.dataset.bkcancel, p_reason: reason }); if (error) return alert(error.message); loadAppts(); renderBkMonth(); reloadCal(); return; }
 });
 
 // notifications bell
@@ -2293,7 +2338,12 @@ document.addEventListener('click', async e => { const d = e.target.closest('[dat
 document.getElementById('langToggle').addEventListener('click', () => { renderHome(); loadAnnouncements(); });
 loadAnnouncements();
 loadBookCfg(); loadAppts().then(renderHome); renderHome(); renderBkDay(); loadNotifs();
-setInterval(() => { loadNotifs(); loadAppts(); }, 60000);
+setInterval(() => { loadNotifs(); loadAppts(); reloadCal(); if (!BK_EDIT) renderBkMonth(); }, 60000);
+document.addEventListener('click', async e => { const bf = e.target.closest('[data-bookfor]'); if (!bf) return;
+  showPage('calendar'); if (!BOOK_CFG) await loadBookCfg();
+  document.getElementById('bkAddForm').innerHTML = bookAddFormHtml();
+  const sel = document.getElementById('bkfClient'); if (sel) sel.value = bf.dataset.bookfor;
+  document.getElementById('bkAddForm').scrollIntoView({ behavior:'smooth', block:'center' }); });
 
 document.getElementById('logoutBtn').onclick = async () => { await sb.auth.signOut(); location.reload(); };
 document.getElementById('changePwBtn').onclick = async () => {
