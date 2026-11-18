@@ -2001,7 +2001,7 @@ function drawBkMonth(){
         return sep + (() => {
         if (sl.booked) return `<span title="${esc(sl.booked.client||'')} ${sl.booked.start}–${sl.booked.end}" style="background:var(--text); color:var(--bg); border-radius:8px; padding:5px 7px; font-size:11.5px; text-decoration:line-through; line-height:1.1; text-align:center;">${t}<br><span style="font-size:8px; text-decoration:none; display:inline-block;">${esc((sl.booked.client||'booked').split(' ')[0])}</span></span>`;
         return `<button class="tap" ${past ? 'disabled' : ''} data-bkslot="${sl.time}" data-date="${d.date}" data-open="${sl.open ? 1 : 0}" style="outline:${sl.pend ? '2px dashed #B0566A' : 'none'}; outline-offset:1px; border:1px solid ${sl.open ? 'var(--text)' : 'var(--hairline)'}; background:transparent; color:${sl.open ? 'var(--text)' : 'var(--muted)'}; border-radius:8px; padding:6px 8px; font-size:12px; font-weight:${sl.open ? 600 : 400}; text-decoration:${sl.open ? 'none' : 'line-through'}; cursor:pointer;">${t}${sl.default ? '' : '<sup style="font-size:7px;"> +</sup>'}</button>`; })(); }).join('')}</div>
-      ${past ? '' : `<span style="display:flex; flex-direction:column; align-items:center; gap:2px; flex:none;"><span class="tap" data-bkadd="${d.date}" title="Open another time" style="cursor:pointer; color:var(--muted); font-size:15px; line-height:1; padding:0 4px;">＋</span><span class="tap" data-bkcloseday="${d.date}" title="Close the whole day" style="cursor:pointer; color:var(--muted); font-size:14px; line-height:1; padding:0 4px;">⊘</span></span>`}${(d.cancelled||[]).length ? `<div style="flex-basis:100%; font-size:10px; color:#B0566A; padding-left:42px;">${d.cancelled.map(x => `↩ ${esc(x.client||'')} ${x.time} — ${x.kind === 'reschedule' ? 'cancelled to reschedule' : 'cancelled'} by ${x.by === 'team' ? 'team' : 'client'} · ${new Date(x.at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}`).join('<br>')}</div>` : ''}</div>`; }).join('') + '</div>'
+      ${past ? '' : `<span style="display:flex; flex-direction:column; align-items:center; gap:2px; flex:none;"><span class="tap" data-bkadd="${d.date}" title="Open another time" style="cursor:pointer; color:var(--muted); font-size:15px; line-height:1; padding:0 4px;">＋</span><span class="tap" data-bkcloseday="${d.date}" title="Close the whole day" style="cursor:pointer; color:var(--muted); font-size:14px; line-height:1; padding:0 4px;">⊘</span><span class="tap" data-bksess="${d.date}" title="Sessions for this day (e.g. 08/12)" style="cursor:pointer; color:${d.custom ? '#B0566A' : 'var(--muted)'}; font-size:13px; line-height:1; padding:0 4px;">⧉</span></span>`}${(d.cancelled||[]).length ? `<div style="flex-basis:100%; font-size:10px; color:#B0566A; padding-left:42px;">${d.cancelled.map(x => `↩ ${esc(x.client||'')} ${x.time} — ${x.kind === 'reschedule' ? 'cancelled to reschedule' : 'cancelled'} by ${x.by === 'team' ? 'team' : 'client'} · ${new Date(x.at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}`).join('<br>')}</div>` : ''}</div>`; }).join('') + '</div>'
     : '<div style="font-size:11.5px; color:var(--muted);">No booking days this month.</div>';
 }
 function bookAddFormHtml(){
@@ -2041,7 +2041,8 @@ async function bkInstagram(){
   const cx0 = 118, cy0 = 335, cw = 844, chh = 1515, r = 64;
   g.fillStyle = isOwner ? '#F3EFEC' : '#FAF8F6'; g.beginPath(); g.moveTo(cx0+r, cy0); g.arcTo(cx0+cw, cy0, cx0+cw, cy0+chh, r); g.arcTo(cx0+cw, cy0+chh, cx0, cy0+chh, r); g.arcTo(cx0, cy0+chh, cx0, cy0, r); g.arcTo(cx0, cy0, cx0+cw, cy0, r); g.closePath(); g.fill();
   const fmt = t => isOwner ? (t.endsWith(':00') ? t.slice(0,2) : t.replace(':','.')) : t.replace(':','.');
-  const cols = Math.max(...days.map(d => Math.max(d.sessions||0, ...d.slots.map(x => (x.group ?? 0) + 1))));
+  const colOf = x => (x.col ?? x.group ?? 0);
+  const cols = Math.max(...days.map(d => Math.max(d.cols||d.sessions||0, ...d.slots.map(x => colOf(x) + 1))));
   const top = cy0 + 50, bottom = cy0 + chh - 60, rowH = Math.min(88, (bottom - top) / days.length);
   const size = Math.max(22, Math.min(34, rowH * 0.42));
   const dateX = cx0 + 88, colL = cx0 + 150, colR = cx0 + cw - 50, colW = (colR - colL) / cols;
@@ -2051,7 +2052,7 @@ async function bkInstagram(){
     const y = top + rowH * i + rowH * 0.6;
     g.textAlign = 'center'; g.font = F(size); g.fillText(String(new Date(d.date + 'T00:00:00').getDate()), dateX, y);
     for (let k = 0; k < cols; k++){
-      const cand = d.slots.filter(x => (x.group ?? 0) === k); if (!cand.length) continue;
+      const cand = d.slots.filter(x => colOf(x) === k); if (!cand.length) continue;
       const avail = cand.filter(x => x.open && !x.booked), taken = cand.filter(x => x.open && x.booked), defs = cand.filter(x => x.default);
       const past = d.date < todayStr;
       const show = (!past && avail.length) ? avail : taken.length ? taken : (defs.length ? defs : cand), struck = past || !avail.length;
@@ -2132,6 +2133,18 @@ document.addEventListener('click', async e => {
     BK_EDIT = false; BK_PEND.clear(); return renderBkMonth(); }
   const gc = e.target.closest('[data-gcal]'); if (gc) return openGcal(gc.dataset.gcal);
   if (e.target.id === 'bkIgBtn'){ e.target.disabled = true; try { await bkInstagram(); } finally { e.target.disabled = false; } return; }
+  const sx = e.target.closest('[data-bksess]');
+  if (sx){ const d = BK_MDATA.find(x => x.date === sx.dataset.bksess); const cfg = BOOK_CFG || {}, a = document.getElementById('bkSchArtist').value;
+    const usual = (cfg.artist_sessions||{})[a] || ((cfg.artist_slots||{})[a] || cfg.slots || []).map(t => [t]);
+    const cur = d && d.custom ? d.custom : usual;
+    const t = prompt(`Sessions on ${dayLabel(sx.dataset.bksess)} for ${bkArtistName()}.\nSeparate sessions with a comma; a slash = alternative start times in one session (booking one closes the other).\nExample: 08/12, 16\nLeave empty to go back to the usual sessions.`, sessionsText(cur));
+    if (t === null) return;
+    let sess = null;
+    if (t.trim()){ sess = t.split(',').map(x => x.trim()).filter(Boolean).map(g => g.split('/').map(x => { const m = x.trim().replace('.',':').match(/^(\d{1,2})(?::(\d{2}))?$/); return m ? m[1].padStart(2,'0') + ':' + (m[2]||'00') : null; }));
+      if (sess.some(g => g.some(x => !x))) return alert('Write it like: 08/12, 16'); }
+    if (BK_EDIT && BK_PEND.size && !confirm('Changing the sessions discards your unsaved edit-mode changes. Continue?')) return;
+    const { error } = await sb.rpc('ngd_set_day_sessions', { p_artist: a, p_date: sx.dataset.bksess, p_sessions: sess });
+    if (error) return alert(error.message); BK_PEND.clear(); BK_EDIT = false; return renderBkMonth(); }
   const cd = e.target.closest('[data-bkcloseday]');
   if (cd && BK_EDIT){ const d = BK_MDATA.find(x => x.date === cd.dataset.bkcloseday); (d && d.slots || []).forEach(sl => { if (!sl.booked){ const k = d.date + '|' + sl.time; if (sl.open) BK_PEND.set(k, false); else BK_PEND.delete(k); } });
     for (const k of [...BK_PEND.keys()]) if (k.startsWith(cd.dataset.bkcloseday + '|') && BK_PEND.get(k) && !(d.slots||[]).some(x => d.date + '|' + x.time === k)) BK_PEND.delete(k);
@@ -2201,9 +2214,12 @@ document.getElementById('bellBtn').onclick = async () => {
 // booking settings (owner & admin, Website page)
 if (document.getElementById('page-website')){
   document.getElementById('page-website').insertAdjacentHTML('beforeend', `<div class="card"><div class="eyebrow">Client website</div><div class="title">Booking settings</div>
-    <div style="font-size:11px; color:var(--muted); margin-top:6px;">Clients can book up to this date. Move it forward each time you open the new month's schedule (last Tuesday of the month).</div>
     <div style="display:grid; gap:8px; margin-top:10px;">
-      <label style="font-size:10.5px; color:var(--muted);">Booking open until</label><input id="bkOpenUntil" type="date" />
+      <label style="font-size:10.5px; color:var(--muted);">When can clients book a month?</label>
+      <select id="bkOpenMode"><option value="auto">Automatic — each month opens on the last Tuesday of the month before</option><option value="manual">Manual — I choose the date myself</option></select>
+      <div id="bkOpenAuto" class="row" style="gap:6px; align-items:center;"><span style="flex:2.6; font-size:11px; color:var(--muted);">Opens at (hour, Jakarta time)</span><input id="bkOpenHour" type="number" min="0" max="23" style="flex:1;" /></div>
+      <div id="bkOpenManual" style="display:none;"><label style="font-size:10.5px; color:var(--muted);">Booking open until</label><input id="bkOpenUntil" type="date" /></div>
+      <div id="bkOpenNow" style="font-size:11px; background:var(--tint); border-radius:10px; padding:8px 10px;"></div>
       <div class="row" style="gap:6px;"><div style="flex:1;"><label style="font-size:10.5px; color:var(--muted);">DP owner</label><input id="bkDpOwner" type="number" /></div><div style="flex:1;"><label style="font-size:10.5px; color:var(--muted);">DP senior</label><input id="bkDpSenior" type="number" /></div><div style="flex:1;"><label style="font-size:10.5px; color:var(--muted);">DP junior</label><input id="bkDpJunior" type="number" /></div></div>
       <div style="font-size:10.5px; color:var(--muted); margin-top:4px;">Usual sessions and working days per nail artist. Separate sessions with a comma; a slash means alternative start times in the same session, e.g. <b>08/09, 12/13, 16</b>. When one time in a session is booked, the others in that session close automatically.</div>
       <div id="bkArtistSlots"></div>
@@ -2216,6 +2232,12 @@ if (document.getElementById('page-website')){
   (async () => {
     await loadBookCfg(); const c = BOOK_CFG || {};
     document.getElementById('bkOpenUntil').value = c.open_until || '';
+    document.getElementById('bkOpenMode').value = c.open_mode || 'auto'; document.getElementById('bkOpenHour').value = c.open_hour ?? 0;
+    const syncMode = async () => { const auto = document.getElementById('bkOpenMode').value === 'auto';
+      document.getElementById('bkOpenAuto').style.display = auto ? '' : 'none'; document.getElementById('bkOpenManual').style.display = auto ? 'none' : '';
+      const { data: w } = await sb.rpc('ngd_booking_window'); if (!w) return;
+      document.getElementById('bkOpenNow').innerHTML = `Right now clients can book until <b>${dayLabel(w.open_until)}</b>.` + (w.next_open && auto ? ` Next month opens <b>${new Date(w.next_open).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</b>.` : ''); };
+    document.getElementById('bkOpenMode').onchange = syncMode; syncMode();
     document.getElementById('bkArtistSlots').innerHTML = bookArtists().map(a => { const days = (c.artist_days||{})[a.id] || c.days || [2,3,4,5];
       return `<div style="margin-bottom:10px;"><div class="row" style="gap:6px; align-items:center;"><span style="flex:1; font-size:11.5px; font-weight:600;">${esc(a.name)}</span><input class="bkASlots" data-id="${a.id}" value="${esc(sessionsText((c.artist_sessions||{})[a.id] || ((c.artist_slots||{})[a.id] || c.slots || []).map(t => [t])))}" style="flex:2.6; font-size:12px; padding:7px 8px;" /></div>
         <div style="display:flex; gap:4px; margin-top:4px; justify-content:flex-end;">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((n,i) => `<label style="font-size:10px; display:flex; flex-direction:column; align-items:center; gap:2px;"><input type="checkbox" class="bkADay" data-id="${a.id}" value="${i+1}" ${days.includes(i+1)?'checked':''} style="width:auto;">${n}</label>`).join('')}</div></div>`; }).join('')
@@ -2231,6 +2253,7 @@ if (document.getElementById('page-website')){
   document.getElementById('bkSetSave').onclick = async () => {
     const c = JSON.parse(JSON.stringify(BOOK_CFG || {}));
     c.open_until = document.getElementById('bkOpenUntil').value || c.open_until;
+    c.open_mode = document.getElementById('bkOpenMode').value; c.open_hour = Math.min(23, Math.max(0, parseInt(document.getElementById('bkOpenHour').value) || 0));
     c.dp = { owner: +document.getElementById('bkDpOwner').value || 0, senior: +document.getElementById('bkDpSenior').value || 0, junior: +document.getElementById('bkDpJunior').value || 0 };
     c.artist_days = c.artist_days || {};
     bookArtists().forEach(a => { c.artist_days[a.id] = [...document.querySelectorAll(`.bkADay[data-id="${a.id}"]:checked`)].map(x => +x.value); });
