@@ -430,9 +430,9 @@ pages.insertAdjacentHTML('beforeend', `
     <div style="font-size:11.5px; color:var(--muted);">Group calendar: everyone can view, only owner and admin can add or edit. Personal calendar: private to each person, for their own reminders. Tap any date above to see or add to that day.</div>
   </div>
   <div class="card">
-    <div style="font-weight:600; font-size:13px; margin-bottom:6px;" data-i18n="googleCalendarSync">Google Calendar sync</div>
-    <div style="font-size:11.5px; color:var(--muted); background:var(--tint); border-radius:10px; padding:8px 10px;">⚠️ This only <b>reads</b> your Google Calendar. It never edits, deletes, or adds anything on your actual Google Calendar — nothing here can change it in any way.</div>
-    <button class="btn-ghost tap" style="width:100%; margin-top:10px;" data-i18n="connectGoogleCalendar">Connect Google Calendar</button>
+    <div style="font-weight:600; font-size:13px; margin-bottom:6px;">Google Calendar</div>
+    <div style="font-size:11.5px; color:var(--muted); line-height:1.5;">Bookings are added to Google Calendar one by one: open <b>Bookings</b> and tap <b>📅</b> on a request or <b>Google Calendar</b> in Upcoming. Google opens with the title, time and invites filled in — tap <b>Save</b> there.<br><br>The dashboard never edits or deletes anything in Google Calendar. Automatic syncing is not switched on yet.</div>
+    <div class="row" style="gap:6px; margin-top:10px;"><button class="btn-primary tap" style="flex:1;" onclick="(document.getElementById('bkReqCard')||document.body).scrollIntoView({behavior:'smooth'})">See booking requests</button><a class="btn-ghost tap" style="flex:1; text-align:center; text-decoration:none;" href="https://calendar.google.com/calendar/r" target="_blank" rel="noopener">Open Google Calendar</a></div>
   </div>
 </div>`);
 
