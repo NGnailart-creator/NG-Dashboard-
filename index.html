@@ -654,6 +654,22 @@ function renderGuidance(){
 }
 document.getElementById('kbSearch').oninput = e => renderKB(e.target.value);
 document.getElementById('kbSearchBtn').onclick = () => renderKB(document.getElementById('kbSearch').value);
+// ---------- DP proof cleanup: files are deleted 45 days after the booking date (runs at most once a day) ----------
+setTimeout(async () => {
+  try {
+    const key = 'ngd-dp-cleanup', today = new Date().toISOString().slice(0,10);
+    if (localStorage.getItem(key) === today) return;
+    const { data: paths, error } = await sb.rpc('ngd_dp_proofs_to_delete');
+    if (error) return;
+    if ((paths||[]).length){
+      const rm = await sb.storage.from('ngd-dp').remove(paths);
+      if (rm.error) return;
+      await sb.rpc('ngd_dp_proofs_deleted', { p_paths: paths });
+    }
+    localStorage.setItem(key, today);
+  } catch(e){}
+}, 4000);
+
 // ---------- STORAGE USAGE (owner) ----------
 const STORE_LIMIT = { files: 1024**3, db: 500 * 1024**2 };
 const STORE_NAMES = { 'ngd-dp':'DP proofs', 'ngd-sets':"Today's Set photos", 'ngd-client-photos':'Client photos', 'ngd-team-photos':'Team photos', 'ngd-colors':'Color gallery', 'ngd-materials':'PDF library' };
