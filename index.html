@@ -219,10 +219,19 @@ function mapClientRow(r){
     sensitivity:r.sensitivity||'', clientAllergy:r.client_allergy||'', achievements:r.achievements||{}, achReq:r.ach_requests||{}, photo:r.photo_path||null, savedRewards:r.saved_rewards||[], phone:r.phone||'', instagram:r.instagram||'', area:r.area||'', referral:r.referral||'', referralDetail:r.referral_detail||'', firstVisit:r.first_visit||'' };
 }
 let CLIENT_PHOTO_URLS = {};
+// Client photos are kept on this phone (Cache Storage): each photo is downloaded from the server only once.
+const IMGCACHE = 'ngd-img-v1', imgKey = (b, p) => location.origin + '/__ngdimg/' + b + '/' + p;
+async function cacheGetImg(b, p){ try { if (!window.caches) return null; const r = await (await caches.open(IMGCACHE)).match(imgKey(b, p)); return r ? await r.blob() : null; } catch(e){ return null; } }
+async function cachePutImg(b, p, blob){ try { if (window.caches) await (await caches.open(IMGCACHE)).put(imgKey(b, p), new Response(blob, { headers:{ 'Content-Type': blob.type || 'image/jpeg' } })); } catch(e){} }
 async function loadClientPhotos(){
-  const paths = clients.map(c => c.photo).filter(p => p && !CLIENT_PHOTO_URLS[p]); if (!paths.length) return;
-  const { data } = await sb.storage.from('ngd-client-photos').createSignedUrls(paths, 60*60*24);
-  (data||[]).forEach(d => { if (d.signedUrl) CLIENT_PHOTO_URLS[d.path] = d.signedUrl; });
+  const paths = [...new Set(clients.map(c => c.photo).filter(p => p && !CLIENT_PHOTO_URLS[p]))]; if (!paths.length) return;
+  const miss = [];
+  await Promise.all(paths.map(async p => { const b = await cacheGetImg('ngd-client-photos', p); if (b) CLIENT_PHOTO_URLS[p] = URL.createObjectURL(b); else miss.push(p); }));
+  if (miss.length){
+    const { data } = await sb.storage.from('ngd-client-photos').createSignedUrls(miss, 600);
+    await Promise.all((data||[]).map(async d => { if (!d.signedUrl) return;
+      try { const b = await (await fetch(d.signedUrl)).blob(); await cachePutImg('ngd-client-photos', d.path, b); CLIENT_PHOTO_URLS[d.path] = URL.createObjectURL(b); } catch(e){ CLIENT_PHOTO_URLS[d.path] = d.signedUrl; } }));
+  }
   renderClients((document.getElementById('clientSearch')||{}).value || '');
 }
 function clientCardHtml(c){
