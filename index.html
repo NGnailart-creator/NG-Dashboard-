@@ -585,6 +585,14 @@ document.getElementById('calWhoFilter').onchange = e => { calWho = e.target.valu
 // ---------- KNOWLEDGE BASE ----------
 pages.insertAdjacentHTML('beforeend', `
 <div class="pagesec section-hidden" id="page-knowledge">
+  <div class="card" id="matCard">
+    <div class="eyebrow">Materials</div>
+    <div class="title">📄 PDF library</div>
+    <div style="font-size:11.5px; color:var(--muted); margin-top:4px;" id="matIntro"></div>
+    <div id="matTabs" class="row" style="gap:6px; flex-wrap:wrap; margin-top:10px;"></div>
+    <div id="matList" style="margin-top:8px;"></div>
+    <div id="matAddBox"></div>
+  </div>
   <div class="card">
     <div class="eyebrow" data-i18n="adminKnowledgeBase">Admin knowledge base</div>
     <div class="title" data-i18n="qaLibrary">Q&A library</div>
@@ -646,6 +654,81 @@ function renderGuidance(){
 }
 document.getElementById('kbSearch').oninput = e => renderKB(e.target.value);
 document.getElementById('kbSearchBtn').onclick = () => renderKB(document.getElementById('kbSearch').value);
+// ---------- PDF MATERIALS ----------
+const MAT_OWNER = currentUser.role === 'Owner'; let MATERIALS = [], MAT_TAB = MAT_OWNER ? 'everything' : 'all';
+const MAT_AUD = { all:'All team', artist:'Nail artists', admin:'Admin' };
+const MAT_AUD_ID = { all:'Semua tim', artist:'Nail artist', admin:'Admin' };
+function matTabsFor(){ if (MAT_OWNER) return ['all','artist','admin']; if (currentUser.role === 'Admin') return ['all','admin']; return ['all','artist']; }
+function fmtSize(b){ return !b ? '' : b > 1048576 ? (b/1048576).toFixed(1) + ' MB' : Math.round(b/1024) + ' KB'; }
+async function loadMaterials(){
+  const { data, error } = await sb.from('ngd_materials').select('*').order('created_at', { ascending:false });
+  MATERIALS = error ? [] : (data || []); renderMaterials();
+}
+function renderMaterials(){
+  const tabs = matTabsFor();
+  document.getElementById('matIntro').innerHTML = MAT_OWNER ? 'You see every PDF. <b>Nail artists</b> PDFs are only for Nayla &amp; Fida, <b>Admin</b> PDFs only for Falah, <b>All team</b> for everyone.'
+    : currentUser.role === 'Admin' ? 'PDFs for the whole team and for admin.' : 'PDFs for the whole team and for nail artists.';
+  const count = k => k === 'everything' ? MATERIALS.length : MATERIALS.filter(m => m.audience === k).length;
+  const tabList = MAT_OWNER ? ['everything', ...tabs] : tabs;
+  if (!tabList.includes(MAT_TAB)) MAT_TAB = tabList[0];
+  document.getElementById('matTabs').innerHTML = tabList.map(k => `<button class="pill tap" data-mattab="${k}" style="font-size:10.5px; padding:5px 10px; ${MAT_TAB===k?'background:var(--text); color:var(--bg); border-color:var(--text);':''}">${k==='everything'?'Everything':MAT_AUD[k]} · ${count(k)}</button>`).join('');
+  const list = MATERIALS.filter(m => MAT_TAB === 'everything' || m.audience === MAT_TAB);
+  document.getElementById('matList').innerHTML = list.length ? list.map(m => `<div style="border-top:1px solid var(--hairline); padding:10px 0;">
+    <div class="row" style="justify-content:space-between; gap:8px; align-items:flex-start;"><div style="flex:1;"><div style="font-size:13px; font-weight:600;">📄 ${esc(m.title)}</div>
+      ${m.description ? `<div style="font-size:11.5px; color:var(--muted); margin-top:2px;">${esc(m.description)}</div>` : ''}
+      <div style="font-size:10px; color:var(--muted); margin-top:3px;">${esc(m.created_by_name||'')} · ${new Date(m.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}${m.size_bytes ? ' · ' + fmtSize(m.size_bytes) : ''}</div></div>
+      <span class="tag" style="white-space:nowrap;">${MAT_AUD[m.audience]}</span></div>
+    <div class="row" style="gap:6px; margin-top:8px;"><button class="btn-primary tap" data-matopen="${m.id}" style="flex:1; font-size:11px; padding:7px;">Open PDF</button>
+      ${MAT_OWNER ? `<select data-mataud="${m.id}" style="flex:1; font-size:11px; padding:6px;">${Object.keys(MAT_AUD).map(k => `<option value="${k}" ${m.audience===k?'selected':''}>For: ${MAT_AUD[k]}</option>`).join('')}</select><button class="btn-ghost tap" data-matdel="${m.id}" style="font-size:11px; padding:7px 10px; color:#8A2D1F;">🗑</button>` : ''}</div></div>`).join('')
+    : '<div style="font-size:12px; color:var(--muted); padding:6px 0;">No PDFs here yet.</div>';
+  document.getElementById('matAddBox').innerHTML = isOwnerOrAdmin ? `<details style="margin-top:10px;"><summary class="btn-ghost tap" style="list-style:none; text-align:center;">+ Upload PDF</summary>
+    <div style="display:grid; gap:8px; margin-top:10px;">
+      <input id="matTitle" placeholder="Title (e.g. SOP cleaning the studio)" />
+      <textarea id="matDesc" placeholder="Short description (optional)" style="min-height:40px;"></textarea>
+      <select id="matAud">${matTabsFor().map(k => `<option value="${k}">For: ${MAT_AUD[k]}</option>`).join('')}</select>
+      <input id="matFile" type="file" accept="application/pdf,.pdf" />
+      <div style="font-size:10.5px; color:var(--muted);">PDF only, max 50 MB.${MAT_OWNER ? ' You can change who sees it later.' : ''}</div>
+      <button class="btn-primary tap" id="matUpload">Upload</button></div></details>` : '';
+  const up = document.getElementById('matUpload'); if (up) up.onclick = uploadMaterial;
+}
+async function uploadMaterial(){
+  const f = document.getElementById('matFile').files[0], title = document.getElementById('matTitle').value.trim();
+  if (!title) return alert('Give the PDF a title.');
+  if (!f) return alert('Choose a PDF file.');
+  if (f.type && f.type !== 'application/pdf' && !/\.pdf$/i.test(f.name)) return alert('Only PDF files can be uploaded.');
+  if (f.size > 50 * 1048576) return alert('This PDF is larger than 50 MB.');
+  const btn = document.getElementById('matUpload'); btn.disabled = true; btn.textContent = 'Uploading…';
+  const path = `${crypto.randomUUID()}.pdf`;
+  const up = await sb.storage.from('ngd-materials').upload(path, f, { contentType:'application/pdf', upsert:false });
+  if (up.error){ btn.disabled = false; btn.textContent = 'Upload'; return alert('Upload failed: ' + up.error.message); }
+  const { error } = await sb.from('ngd_materials').insert({ title, description: document.getElementById('matDesc').value.trim() || null, audience: document.getElementById('matAud').value,
+    file_path: path, file_name: f.name, size_bytes: f.size, created_by: currentUser.id, created_by_name: currentUser.name });
+  btn.disabled = false; btn.textContent = 'Upload';
+  if (error){ await sb.storage.from('ngd-materials').remove([path]); return alert('Could not save: ' + error.message); }
+  MAT_TAB = document.getElementById('matAud').value; await loadMaterials();
+}
+document.addEventListener('click', async e => {
+  const tb = e.target.closest('[data-mattab]'); if (tb){ MAT_TAB = tb.dataset.mattab; return renderMaterials(); }
+  const op = e.target.closest('[data-matopen]');
+  if (op){ const m = MATERIALS.find(x => x.id === op.dataset.matopen); if (!m) return;
+    const w = window.open('', '_blank');
+    const { data, error } = await sb.storage.from('ngd-materials').createSignedUrl(m.file_path, 600);
+    if (error || !data){ if (w) w.close(); return alert('Could not open the PDF.'); }
+    if (w) w.location.href = data.signedUrl; else location.href = data.signedUrl; return; }
+  const dl = e.target.closest('[data-matdel]');
+  if (dl){ const m = MATERIALS.find(x => x.id === dl.dataset.matdel); if (!m || !confirm(`Delete "${m.title}"? The PDF is removed for everyone.`)) return;
+    const { error } = await sb.from('ngd_materials').delete().eq('id', m.id); if (error) return alert(error.message);
+    await sb.storage.from('ngd-materials').remove([m.file_path]); await loadMaterials(); }
+});
+document.addEventListener('change', async e => {
+  const a = e.target.closest('[data-mataud]'); if (!a) return;
+  const m = MATERIALS.find(x => x.id === a.dataset.mataud);
+  if (!confirm(`Show "${m.title}" to: ${MAT_AUD[a.value]}?`)){ a.value = m.audience; return; }
+  const { error } = await sb.from('ngd_materials').update({ audience: a.value }).eq('id', m.id); if (error){ a.value = m.audience; return alert(error.message); }
+  await loadMaterials();
+});
+loadMaterials();
+
 document.getElementById('addMaterialBtn').onclick = () => {
   document.getElementById('addMaterialForm').innerHTML = `
     <div class="card">
@@ -1264,11 +1347,18 @@ document.addEventListener('click', async e => {
     if (error) return alert(error.message);
     await loadTreatments(); await reloadClients();
   }
-  if (t.dataset.canceltreat){
-    if (!confirm('Cancel this treatment entry?')) return;
-    const { error } = await sb.from('ngd_treatments').update({status:'cancelled'}).eq('id', t.dataset.canceltreat);
+  if (t.dataset.canceltreat || t.dataset.deltreat){
+    const id = t.dataset.canceltreat || t.dataset.deltreat;
+    const tr = TREATMENTS.find(x => x.id === id) || {}; const cn = (clients.find(c => c.id === tr.client_id)||{}).name || 'this client';
+    if (!confirm(`Delete this treatment for ${cn} (${tr.treatment_date||''})?` + (tr.status === 'confirmed' ? `\n\nIt was already confirmed, so ${cn}'s visit count goes down by 1. A coupon used on it becomes usable again.` : '') + '\n\nThis is recorded in Activity.')) return;
+    const { error } = await sb.rpc('ngd_delete_treatment', { p_id: id });
     if (error) return alert(error.message);
-    await loadTreatments();
+    await loadTreatments(); await reloadClients();
+  }
+  if (t.dataset.edittreat){
+    let tr = TREATMENTS.find(x => x.id === t.dataset.edittreat);
+    if (!tr){ const { data } = await sb.from('ngd_treatments').select('*').eq('id', t.dataset.edittreat).maybeSingle(); tr = data; }
+    if (tr) openTreatmentForm(tr.client_id, tr);
   }
 });
 
@@ -1287,6 +1377,7 @@ pages.insertAdjacentHTML('beforeend', `
 </div>`);
 document.getElementById('treatNewBtn').onclick = () => openTreatmentForm(null);
 
+function canEditTreat(t){ return isOwner || currentUser.role === 'Admin' || (t.status === 'pending' && (t.artist_id === currentUser.id || t.created_by === currentUser.id)); }
 function treatmentRowHtml(t){
   const items = (t.items||[]).map(i => `<div class="row" style="justify-content:space-between; font-size:12px; padding:2px 0;"><span>${esc(i.label)}${i.qty>1?' × '+i.qty:''}</span><span>${rupiah(i.amount)}</span></div>`).join('');
   const client = clients.find(c => c.id === t.client_id);
@@ -1299,7 +1390,8 @@ function treatmentRowHtml(t){
     ${t.coupon_id ? `<div style="font-size:11px; color:#B0566A;">🏷️ Coupon applied</div>` : ''}
     <div class="row" style="justify-content:space-between; font-size:12.5px; font-weight:600; border-top:1px solid var(--text); margin-top:4px; padding-top:4px;"><span>Total</span><span>Rp ${rupiah(t.total)}</span></div>
     ${t.note ? `<div style="font-size:11px; color:var(--muted); margin-top:4px;">Note for client: ${esc(t.note)}</div>` : ''}
-    ${canConfirm ? `<div class="row" style="gap:6px; margin-top:8px;"><button class="btn-primary tap" data-confirm="${t.id}" style="flex:1; font-size:11px; padding:7px;">✓ Confirm price</button><button class="btn-ghost tap" data-canceltreat="${t.id}" style="font-size:11px; padding:7px 10px;">Cancel</button></div>` : ''}
+    ${canConfirm ? `<div class="row" style="gap:6px; margin-top:8px;"><button class="btn-primary tap" data-confirm="${t.id}" style="flex:1; font-size:11px; padding:7px;">✓ Confirm price</button></div>` : ''}
+    ${canEditTreat(t) ? `<div class="row" style="gap:6px; margin-top:8px;"><button class="btn-ghost tap" data-edittreat="${t.id}" style="flex:1; font-size:11px; padding:7px;">✎ Edit</button><button class="btn-ghost tap" data-deltreat="${t.id}" style="flex:1; font-size:11px; padding:7px; color:#8A2D1F;">🗑 Delete</button></div>` : ''}
     ${(isOwner || currentUser.role === 'Admin' || t.created_by === currentUser.id || t.artist_id === currentUser.id) ? `<button class="btn-ghost tap" data-mkset="${t.id}" style="width:100%; margin-top:8px; font-size:11px; padding:7px;">📸 Today's Set${(SETS_BY_T[t.id]||[]).some(x => x.status==='sent' && new Date(x.expires_at) > new Date()) ? ' · sent ✓' : ''}</button>` : ''}
   </div>`;
 }
@@ -1318,13 +1410,14 @@ async function reloadClients(){
   clients = (data||[]).map(mapClientRow); renderClients(document.getElementById('clientSearch').value);
 }
 
-function openTreatmentForm(clientId){
+function openTreatmentForm(clientId, editT){
   showPage('treat');
+  window._tfEdit = editT || null;
   const box = document.getElementById('treatForm');
   const defaultArtist = currentUser.role === 'Admin' ? (artists()[0]||{}).name : currentUser.name;
   box.innerHTML = `
   <div class="card" id="tf">
-    <div class="eyebrow">New treatment</div>
+    <div class="eyebrow">${editT ? 'Edit treatment' : 'New treatment'}</div>
     <div style="display:grid; gap:8px; margin-top:8px;">
       <select id="tfClient"><option value="">Choose client…</option>${clients.map(c => `<option value="${c.id}" ${c.id===clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
       <div id="tfLoyalty" style="font-size:11px; color:var(--muted);"></div>
@@ -1384,7 +1477,23 @@ function openTreatmentForm(clientId){
     document.getElementById('tfTotal').textContent = 'Rp ' + rupiah(Math.max(sum,0));
     return Math.max(sum,0);
   };
-  addRow(); refreshList();
+  if (!editT) addRow();
+  refreshList();
+  if (editT){
+    const tfC = document.getElementById('tfClient'); tfC.disabled = true;
+    document.getElementById('tfLoyalty').style.display = 'none';
+    document.getElementById('tfCoupon').style.display = 'none'; document.getElementById('tfCouponInfo').style.display = 'none';
+    document.getElementById('tfDate').value = editT.treatment_date || todayISO();
+    const ar = document.getElementById('tfArtist'); if (editT.artist_name && ![...ar.options].some(o => o.value === editT.artist_name)) ar.insertAdjacentHTML('beforeend', `<option>${esc(editT.artist_name)}</option>`); ar.value = editT.artist_name || ar.value;
+    (editT.items||[]).forEach(i => { addRow(); const r = rows.lastElementChild; r.querySelector('.tfLabel').value = i.label||''; r.querySelector('.tfQty').value = i.qty||1; r.querySelector('.tfUnit').value = i.unit_price != null ? i.unit_price : (i.amount||0); r.dataset.kind = i.kind||''; });
+    if (!(editT.items||[]).length) addRow();
+    document.getElementById('tfDiscLabel').value = editT.discount_label || ''; document.getElementById('tfDisc').value = editT.discount_amount || '';
+    document.getElementById('tfNote').value = editT.note || '';
+    document.getElementById('tfSave').textContent = 'Save changes';
+    document.getElementById('tfSave').insertAdjacentHTML('afterend', `<button class="btn-ghost tap" id="tfCancelEdit" style="width:100%;">Cancel</button><div style="font-size:10.5px; color:var(--muted);">Status: ${esc(editT.status)}. Loyalty reward and coupon can't be changed here. Every change is recorded in Activity.</div>`);
+    document.getElementById('tfCancelEdit').onclick = () => { box.innerHTML = ''; };
+    recalc();
+  }
   document.getElementById('tfAddRow').onclick = addRow;
   document.getElementById('tfArtist').onchange = refreshList;
   document.getElementById('tfClient').onchange = refreshList;
@@ -1400,6 +1509,7 @@ function openTreatmentForm(clientId){
     if (e.target.classList.contains('tfDel')){ e.target.closest('.tfRow').remove(); recalc(); }
   });
   const applyReward = (fromItems) => {
+    if (window._tfEdit) return;
     const R = window._tfReward; const sel = box.querySelector('input[name="tfRw"]:checked'); if (!R || !R.opts.length || !sel) return;
     const pick = sel.value === 'none' ? null : R.opts[+sel.value];
     box.querySelectorAll('.rwNote').forEach(n => { const o = R.opts[+n.dataset.i];
@@ -1428,6 +1538,20 @@ function openTreatmentForm(clientId){
     }, 350);
   });
   document.getElementById('tfSave').onclick = async () => {
+    if (editT){
+      const items = [...rows.querySelectorAll('.tfRow')].map(r => {
+        const label = r.querySelector('.tfLabel').value.trim(), hit = (window._tfSheet||[]).find(x => x.label === label);
+        return { label, qty: +r.querySelector('.tfQty').value||1, unit_price: +r.querySelector('.tfUnit').value||0, kind: hit ? hit.sec : (r.dataset.kind || 'Other') };
+      }).filter(i => i.label);
+      if (!items.length) return alert('Add at least one item.');
+      const artist = people.find(p => p.name === document.getElementById('tfArtist').value);
+      const btn = document.getElementById('tfSave'); btn.disabled = true; btn.textContent = 'Saving…';
+      const { error } = await sb.rpc('ngd_update_treatment', { p_id: editT.id, p_date: document.getElementById('tfDate').value || editT.treatment_date, p_artist: artist ? artist.id : null,
+        p_items: items, p_discount_label: document.getElementById('tfDiscLabel').value.trim(), p_discount_amount: +document.getElementById('tfDisc').value || 0, p_note: document.getElementById('tfNote').value.trim() });
+      btn.disabled = false; btn.textContent = 'Save changes';
+      if (error) return alert('Could not save: ' + error.message);
+      box.innerHTML = ''; await loadTreatments(); return;
+    }
     const client_id = document.getElementById('tfClient').value;
     if (!client_id) return alert('Choose a client first.');
     const items = [...rows.querySelectorAll('.tfRow')].map(r => {
@@ -1696,7 +1820,7 @@ if (isOwner){
       <div style="font-size:11px; color:var(--muted); margin-top:6px;">Every change by the team (and clients' own notes) is recorded automatically. Latest 150.</div></div>
     <div class="card" id="actList"></div>
   </div>`);
-  const tableLabel = {ngd_clients:'client', ngd_treatments:'treatment', ngd_coupons:'coupon', ngd_pricing:'price', ngd_bookings:'booking', ngd_messages:'message', ngd_colors:'color', ngd_site:'website', ngd_staff:'team', ngd_vouchers:'voucher', ngd_kb_items:'knowledge', ngd_guidance:'guidance'};
+  const tableLabel = {ngd_clients:'client', ngd_treatments:'treatment', ngd_coupons:'coupon', ngd_pricing:'price', ngd_bookings:'booking', ngd_messages:'message', ngd_colors:'color', ngd_site:'website', ngd_staff:'team', ngd_vouchers:'voucher', ngd_kb_items:'knowledge', ngd_guidance:'guidance', ngd_materials:'material PDF'};
   const verb = {INSERT:'added', UPDATE:'changed', DELETE:'deleted'};
   const nameOfRow = r => { const d = r.new_data || r.old_data || {}; return d.name || d.item || d.code || d.subject_id || d.client_name || d.title || d.question || d.key || ''; };
   const diff = r => {
@@ -1705,12 +1829,32 @@ if (isOwner){
     return Object.keys(n).filter(k => !['updated_at','created_at'].includes(k) && JSON.stringify(o[k]) !== JSON.stringify(n[k]))
       .map(k => `<div style="font-size:10.5px; color:var(--muted);">${esc(k)}: ${esc(JSON.stringify(o[k]??'')).slice(0,60)} → ${esc(JSON.stringify(n[k]??'')).slice(0,60)}</div>`).join('');
   };
+  const treatLine = r => {
+    const o = r.old_data || {}, n = r.new_data || {}, d = r.action === 'DELETE' ? o : n;
+    const cn = (clients.find(c => c.id === d.client_id)||{}).name || 'a client';
+    const who = `<b style="font-weight:600;">${esc(r.actor_name)}</b>`, ctx = `<b style="font-weight:500;">${esc(cn)}</b> <span style="color:var(--muted);">(${esc(d.treatment_date||'')} · ${esc(d.artist_name||'')})</span>`;
+    const itemsTxt = it => (it||[]).map(i => `${i.label}${i.qty>1?' ×'+i.qty:''} ${rupiah(i.amount)}`).join(', ') || '—';
+    const line = (k, a, b) => `<div style="font-size:10.5px; color:var(--muted);">${k}: ${esc(String(a))} → <span style="color:var(--text);">${esc(String(b))}</span></div>`;
+    if (r.action === 'INSERT') return `🧾 ${who} logged a treatment for ${ctx} · Rp ${rupiah(n.total)}<div style="font-size:10.5px; color:var(--muted);">${esc(itemsTxt(n.items))}</div>`;
+    if (r.action === 'DELETE') return `🗑 ${who} permanently removed the treatment for ${ctx} · Rp ${rupiah(o.total)}`;
+    if (o.status !== n.status && n.status === 'cancelled') return `🗑 ${who} deleted the treatment for ${ctx} · Rp ${rupiah(o.total)}<div style="font-size:10.5px; color:var(--muted);">${esc(itemsTxt(o.items))}${o.status === 'confirmed' ? ' · was confirmed, visit count reduced by 1' : ''}</div>`;
+    if (o.status !== n.status && n.status === 'confirmed') return `✔️ ${who} confirmed the price for ${ctx} · Rp ${rupiah(n.total)}`;
+    const ch = [];
+    if (JSON.stringify(o.items) !== JSON.stringify(n.items)) ch.push(line('Items', itemsTxt(o.items), itemsTxt(n.items)));
+    if (o.total !== n.total) ch.push(line('Total', 'Rp ' + rupiah(o.total), 'Rp ' + rupiah(n.total)));
+    if ((o.discount_label||'') !== (n.discount_label||'') || (o.discount_amount||0) !== (n.discount_amount||0)) ch.push(line('Discount', `${o.discount_label||'—'} ${o.discount_amount ? 'Rp ' + rupiah(o.discount_amount) : ''}`, `${n.discount_label||'—'} ${n.discount_amount ? 'Rp ' + rupiah(n.discount_amount) : ''}`));
+    if (o.treatment_date !== n.treatment_date) ch.push(line('Date', o.treatment_date, n.treatment_date));
+    if (o.artist_name !== n.artist_name) ch.push(line('Nail artist', o.artist_name||'—', n.artist_name||'—'));
+    if ((o.note||'') !== (n.note||'')) ch.push(line('Note', o.note||'—', n.note||'—'));
+    if (!ch.length) return '';
+    return `✎ ${who} edited the treatment for ${ctx}${ch.join('')}`;
+  };
   window.loadActivity = async function(){
     const { data } = await sb.from('ngd_activity').select('*').order('created_at',{ascending:false}).limit(150);
-    ACTIVITY = data || [];
+    ACTIVITY = (data || []).filter(r => !(r.table_name === 'ngd_treatments' && r.action === 'UPDATE' && !treatLine(r)));
     document.getElementById('actList').innerHTML = ACTIVITY.map(r => `<div style="border-top:1px solid var(--hairline); padding:7px 0;">
-      <div style="font-size:12px;">${r.table_name === 'ngd_schedule' ? `${({CLOSE:'🚫',OPEN:'✅',BOOK:'📅',APPROVE:'✔️',REJECT:'✖️',CANCEL:'↩️',PROOF:'🧾'})[r.action]||'📅'} <b style="font-weight:600;">${esc(r.actor_name)}</b> ${esc(r.summary)}` : `<b style="font-weight:600;">${esc(r.actor_name)}</b> ${verb[r.action]||r.action} ${tableLabel[r.table_name]||r.table_name} <b style="font-weight:500;">${esc(nameOfRow(r))}</b>`}</div>
-      <div style="font-size:10px; color:var(--muted);">${new Date(r.created_at).toLocaleString('id-ID')}</div>${diff(r)}</div>`).join('') || '<div style="font-size:12px; color:var(--muted);">Nothing yet.</div>';
+      <div style="font-size:12px;">${r.table_name === 'ngd_treatments' ? treatLine(r) : r.table_name === 'ngd_schedule' ? `${({CLOSE:'🚫',OPEN:'✅',BOOK:'📅',APPROVE:'✔️',REJECT:'✖️',CANCEL:'↩️',PROOF:'🧾'})[r.action]||'📅'} <b style="font-weight:600;">${esc(r.actor_name)}</b> ${esc(r.summary)}` : `<b style="font-weight:600;">${esc(r.actor_name)}</b> ${verb[r.action]||r.action} ${tableLabel[r.table_name]||r.table_name} <b style="font-weight:500;">${esc(nameOfRow(r))}</b>`}</div>
+      <div style="font-size:10px; color:var(--muted);">${new Date(r.created_at).toLocaleString('id-ID')}</div>${r.table_name === 'ngd_treatments' ? '' : diff(r)}</div>`).join('') || '<div style="font-size:12px; color:var(--muted);">Nothing yet.</div>';
   };
 }
 
@@ -1721,6 +1865,7 @@ document.getElementById('topnav').addEventListener('click', e => {
   if (b.dataset.key === 'feedback' && window.loadFeedback) loadFeedback();
   if (b.dataset.key === 'activity' && window.loadActivity) loadActivity();
   if (b.dataset.key === 'treat') loadTreatments();
+  if (b.dataset.key === 'knowledge') loadMaterials();
 });
 
 // initial phase-2 data
