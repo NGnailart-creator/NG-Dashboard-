@@ -2051,7 +2051,7 @@ if (currentUser.role === 'Owner'){
   pages.insertAdjacentHTML('beforeend', `
   <div class="pagesec section-hidden" id="page-clientact">
     <div class="card"><div class="eyebrow">Only you can see this</div><div class="title">Client activity</div>
-      <div style="font-size:11px; color:var(--muted); margin-top:6px;">What clients do on the website: opening it, bookings, DP proofs, letters, downloads and more. Anonymous feedback is never tracked.</div>
+      <div style="font-size:11px; color:var(--muted); margin-top:6px;">What clients do on the website: opening it, bookings, DP proofs, letters, downloads, named feedback and more. Anonymous feedback is never tracked.</div>
       <div id="caStats" style="margin-top:10px;"></div></div>
     <div class="card"><div class="row" style="justify-content:space-between; align-items:center;"><div class="eyebrow">Clients</div><button class="pill tap" id="caRefresh" style="font-size:10px; padding:4px 9px;">↻ Refresh</button></div>
       <input id="caSearch" placeholder="Search client…" style="width:100%; margin-top:8px;">
@@ -2066,7 +2066,7 @@ if (currentUser.role === 'Owner'){
   const caLine = e => ({ open:'📱 opened the website', tab:`👀 looked at ${esc(CA_TAB[e.detail] || e.detail || 'a page')}`, booked:`📅 booked ${esc(e.detail||'')}`, dp_uploaded:'🧾 uploaded her DP proof',
     cancelled:`↩️ ${e.detail === 'reschedule' ? 'asked to reschedule' : 'cancelled'} a booking`, pin_set:'🔐 created her PIN (first login)', profile_saved:'✏️ updated her profile', photo:'🖼 added a profile photo',
     set_downloaded:"⬇️ downloaded her Today's Set", message:'💬 sent a message', love_note:'♡ wrote a love note', letter_opened:`✉️ opened the letter “${esc(e.detail||'')}”`, note_saved:'📝 saved her notes',
-    tick_requested:'✋ asked for a growth tick', chat_reply:'💬 replied in chat', logout:'🚪 logged out' })[e.kind] || esc(e.kind);
+    tick_requested:'✋ asked for a growth tick', feedback:'📮 sent feedback with her name — see Feedback', chat_reply:'💬 replied in chat', logout:'🚪 logged out' })[e.kind] || esc(e.kind);
   function caRender(){
     const withLogin = CA_SUM.filter(c => c.has_login), opened = withLogin.filter(c => c.last_seen_at), notYet = withLogin.filter(c => !c.last_seen_at);
     const week = withLogin.filter(c => c.last_seen_at && Date.now() - new Date(c.last_seen_at) < 7 * 864e5).length;
