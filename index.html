@@ -151,6 +151,7 @@ function applyTheme(name){
 
 const TABS = [
   {key:'home', label:'Home', icon:'🏠'},
+  {key:'finance', label:'Money', icon:'📊', roles:['Owner','Admin','Senior artist','Junior artist']},
   {key:'clients', label:'Clients', icon:'💅'},
   {key:'calendar', label:'Bookings', icon:'📅'},
   {key:'knowledge', label:'Knowledge', icon:'📚'},
@@ -197,6 +198,7 @@ pages.insertAdjacentHTML('beforeend', `
       <div class="stat" id="homeReqBox" style="cursor:pointer;"><div class="num" id="homeReq">–</div><div class="label" id="homeReqLbl">Waiting for approval</div></div>
     </div>
     <div id="homeTodayList" style="margin-top:10px;"></div>
+    <button class="tap" id="homeMoney" style="display:none; width:100%; margin-top:10px; padding:10px 12px; border:1px solid var(--hairline); border-radius:12px; background:#FFF7EF; text-align:left; font-family:inherit; cursor:pointer;"></button>
   </div>
   <div class="card">
     <div class="row" style="justify-content:space-between;">
@@ -2073,6 +2075,116 @@ if (isOwner){
   };
 }
 
+// ---------- MONEY (finance summary) ----------
+if (['Owner','Admin','Senior artist','Junior artist'].includes(currentUser.role)){
+  const FIN_ALL = isOwner || currentUser.role === 'Admin';
+  pages.insertAdjacentHTML('beforeend', `
+  <div class="pagesec section-hidden" id="page-finance">
+    <div class="card"><div class="eyebrow">${FIN_ALL ? 'Studio money' : 'Only you can see this'}</div><div class="title">${FIN_ALL ? 'Money' : 'My income'}</div>
+      <div class="row" style="gap:6px; margin-top:10px; flex-wrap:wrap;" id="finPeriods">
+        <button class="pill tap" data-finp="this">This month</button><button class="pill tap" data-finp="last">Last month</button><button class="pill tap" data-finp="year">This year</button>
+        <input type="month" id="finMonth" style="width:auto; padding:5px 8px; font-size:12px;"></div>
+      <div id="finTop" style="margin-top:12px;"></div></div>
+    <div class="card"><div class="eyebrow">${FIN_ALL ? 'Per nail artist' : 'My numbers'}</div><div id="finArtists" style="margin-top:6px;"></div></div>
+    <div class="card"><div class="eyebrow">Top services</div><div id="finSvc" style="margin-top:6px;"></div></div>
+    ${isOwner ? `<div class="card"><div class="eyebrow">Only you can change this</div><div class="title" style="font-size:15px;">Commission</div>
+      <div style="font-size:11px; color:var(--muted); margin-top:4px;">Pay is counted on the full service price. Loyalty, birthday and gift discounts are covered by the studio. A new rate only counts from the month you choose — older months stay as they were.</div>
+      <div id="finRates" style="margin-top:8px;"></div></div>` : ''}
+    <div style="font-size:10.5px; color:var(--muted); padding:0 6px 10px;">Only confirmed treatments are counted.</div>
+  </div>`);
+  const ymd = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  const monthRange = (y, m) => [ymd(new Date(y, m, 1)), ymd(new Date(y, m+1, 0))];
+  let FIN_P = 'this', FIN = null, FIN_RATES = [];
+  const finRange = () => { const n = new Date();
+    if (FIN_P === 'last') return monthRange(n.getFullYear(), n.getMonth()-1);
+    if (FIN_P === 'year') return [n.getFullYear() + '-01-01', ymd(n)];
+    if (/^\d{4}-\d{2}$/.test(FIN_P)) { const [y, m] = FIN_P.split('-').map(Number); return monthRange(y, m-1); }
+    return monthRange(n.getFullYear(), n.getMonth()); };
+  const finLabel = () => { const [f] = finRange(); const d = new Date(f + 'T00:00:00');
+    return FIN_P === 'year' ? 'this year' : d.toLocaleDateString('en-GB', { month:'long', year:'numeric' }); };
+  const pct = (a, b) => !b ? '' : (a >= b ? '↑ ' : '↓ ') + Math.abs(Math.round((a - b) / b * 100)) + '% vs the period before';
+  const box = (n, l) => `<div style="flex:1; min-width:0; background:#FFF7EF; border-radius:12px; padding:10px;"><div style="font-size:16px; font-weight:600;">${n}</div><div style="font-size:10px; color:var(--muted); margin-top:2px;">${l}</div></div>`;
+  function finRender(){
+    const r = FIN; if (!r) return;
+    document.querySelectorAll('[data-finp]').forEach(b => b.classList.toggle('active', b.dataset.finp === FIN_P));
+    const me = (r.artists || []).find(a => a.id === currentUser.id) || (r.artists || [])[0];
+    if (r.all){
+      const keep = r.revenue - r.commission;
+      document.getElementById('finTop').innerHTML = `
+        <div style="font-size:11px; color:var(--muted);">Clients paid in ${finLabel()}</div>
+        <div style="font-size:28px; font-weight:600; margin-top:2px;">Rp ${rupiah(r.revenue)}</div>
+        <div style="font-size:11px; color:var(--muted);">${FIN_P === 'year' ? '' : pct(r.revenue, r.prev_revenue)}</div>
+        <div class="row" style="gap:6px; margin-top:10px;">${box(r.count, 'treatments')}${box(r.clients, 'clients')}${box('Rp ' + Math.round((r.count ? r.revenue / r.count : 0) / 1000) + 'K', 'average per visit')}</div>
+        <div style="margin-top:12px; font-size:12px;">
+          <div class="row" style="justify-content:space-between; padding:4px 0;"><span>Full service value</span><span>Rp ${rupiah(r.gross)}</span></div>
+          <div class="row" style="justify-content:space-between; padding:4px 0; color:#B0566A;"><span>Discounts covered by the studio</span><span>− Rp ${rupiah(r.discounts)}</span></div>
+          <div class="row" style="justify-content:space-between; padding:4px 0; border-top:1px solid var(--hairline);"><span>Clients paid</span><span>Rp ${rupiah(r.revenue)}</span></div>
+          <div class="row" style="justify-content:space-between; padding:4px 0; color:#B0566A;"><span>Nail artist pay</span><span>− Rp ${rupiah(r.commission)}</span></div>
+          <div class="row" style="justify-content:space-between; padding:6px 0 0; border-top:1px solid var(--text); font-weight:600;"><span>Studio keeps</span><span>Rp ${rupiah(keep)}</span></div>
+        </div>
+        ${r.pending_count ? `<div style="font-size:11px; color:var(--muted); margin-top:8px;">⏳ ${r.pending_count} treatment${r.pending_count>1?'s':''} (Rp ${rupiah(r.pending_revenue)}) still waiting for confirmation — not counted yet.</div>` : ''}`;
+    } else {
+      document.getElementById('finTop').innerHTML = `
+        <div style="font-size:11px; color:var(--muted);">Your pay for ${finLabel()}</div>
+        <div style="font-size:28px; font-weight:600; margin-top:2px;">Rp ${rupiah(me ? me.commission : 0)}</div>
+        <div style="font-size:11px; color:var(--muted);">${me && me.rate != null ? me.rate + '% of the full service price' : 'Your commission rate isn\'t set yet — ask Gisel.'}</div>
+        <div class="row" style="gap:6px; margin-top:10px;">${box(r.count, 'treatments')}${box(r.clients, 'clients')}${box('Rp ' + Math.round(r.gross / 1000) + 'K', 'service value')}</div>
+        <div style="font-size:11px; color:var(--muted); margin-top:8px;">Loyalty, birthday and gift discounts are covered by the studio — they never lower your pay.</div>
+        ${r.pending_count ? `<div style="font-size:11px; color:var(--muted); margin-top:6px;">⏳ ${r.pending_count} treatment${r.pending_count>1?'s':''} waiting for confirmation — counted once confirmed.</div>` : ''}`;
+    }
+    const arts = (r.artists || []).filter(a => r.all ? (a.count || a.role !== 'Owner') : true);
+    document.getElementById('finArtists').innerHTML = arts.map(a => `<div style="border-top:1px solid var(--hairline); padding:10px 0;">
+      <div class="row" style="justify-content:space-between; align-items:baseline;"><b style="font-weight:600; font-size:13px;">${esc(a.name)}</b><span style="font-size:10.5px; color:var(--muted);">${esc(a.role)}</span></div>
+      <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">${a.count} treatment${a.count===1?'':'s'} · ${a.clients} client${a.clients===1?'':'s'}</div>
+      <div style="font-size:12px; margin-top:6px;">
+        <div class="row" style="justify-content:space-between; padding:2px 0;"><span>Service value</span><span>Rp ${rupiah(a.gross)}</span></div>
+        ${a.discounts ? `<div class="row" style="justify-content:space-between; padding:2px 0; color:var(--muted);"><span>Discounts (studio pays)</span><span>Rp ${rupiah(a.discounts)}</span></div>` : ''}
+        <div class="row" style="justify-content:space-between; padding:2px 0;"><span>Clients paid</span><span>Rp ${rupiah(a.revenue)}</span></div>
+        ${a.role === 'Owner' ? '' : `<div class="row" style="justify-content:space-between; padding:4px 0 0; font-weight:600;"><span>Pay${a.rate != null ? ' · ' + a.rate + '%' : ''}</span><span>Rp ${rupiah(a.commission)}</span></div>`}
+        ${a.missing_rate && a.role !== 'Owner' ? `<div style="font-size:10.5px; color:#B0566A; margin-top:3px;">Some treatments have no commission rate yet${isOwner ? ' — set it below.' : '.'}</div>` : ''}
+      </div></div>`).join('') || '<div style="font-size:12px; color:var(--muted);">Nothing yet.</div>';
+    document.getElementById('finSvc').innerHTML = (r.services || []).map(x => `<div class="row" style="justify-content:space-between; font-size:12px; padding:5px 0; border-top:1px solid var(--hairline);"><span>${esc(x.label)} <span style="color:var(--muted);">× ${+x.count}</span></span><span>Rp ${rupiah(x.amount)}</span></div>`).join('') || '<div style="font-size:12px; color:var(--muted);">No confirmed treatments in this period yet.</div>';
+    if (isOwner) finRatesRender();
+  }
+  function finRatesRender(){
+    const el = document.getElementById('finRates'); if (!el) return;
+    const staff = (FIN.artists || []).filter(a => a.role !== 'Owner');
+    const n = new Date(); const thisM = n.getFullYear() + '-' + String(n.getMonth()+1).padStart(2,'0');
+    el.innerHTML = staff.map(a => { const hist = FIN_RATES.filter(x => x.staff_id === a.id);
+      return `<div style="border-top:1px solid var(--hairline); padding:9px 0;">
+        <div class="row" style="justify-content:space-between; align-items:center; gap:6px;"><b style="font-weight:600; font-size:12.5px; flex:1;">${esc(a.name)}</b>
+          <input type="number" min="0" max="100" step="0.5" placeholder="%" data-ratein="${a.id}" style="width:60px; padding:5px 6px; font-size:12px;">
+          <input type="month" value="${thisM}" data-ratefrom="${a.id}" style="width:auto; padding:5px 6px; font-size:11px;">
+          <button class="pill tap" data-ratesave="${a.id}" style="font-size:10.5px; padding:5px 9px;">Save</button></div>
+        <div style="font-size:10.5px; color:var(--muted); margin-top:4px;">${hist.length ? hist.map(x => `${x.rate}% from ${new Date(x.valid_from + 'T00:00:00').toLocaleDateString('en-GB', { month:'short', year:'numeric' })} <span class="tap" data-ratedel="${a.id}|${x.valid_from}" style="cursor:pointer; text-decoration:underline;">remove</span>`).join(' · ') : 'No rate yet.'}</div></div>`; }).join('');
+  }
+  window.loadFinance = async function(){
+    const [f, t] = finRange();
+    const [a, b] = await Promise.all([sb.rpc('ngd_finance_summary', { p_from: f, p_to: t }), isOwner ? sb.from('ngd_commission_rates').select('staff_id, rate, valid_from').order('valid_from') : Promise.resolve({ data: [] })]);
+    if (a.error) { document.getElementById('finTop').innerHTML = `<div style="font-size:12px; color:#B0566A;">${esc(a.error.message)}</div>`; return; }
+    FIN = a.data; FIN_RATES = b.data || []; finRender();
+  };
+  document.addEventListener('click', async e => {
+    const p = e.target.closest('[data-finp]'); if (p) { FIN_P = p.dataset.finp; document.getElementById('finMonth').value = ''; return loadFinance(); }
+    const sv = e.target.closest('[data-ratesave]');
+    if (sv) { const id = sv.dataset.ratesave; const v = document.querySelector(`[data-ratein="${id}"]`).value; const m = document.querySelector(`[data-ratefrom="${id}"]`).value;
+      if (v === '' || !m) return alert('Fill in the % and the month.');
+      const { error } = await sb.rpc('ngd_set_commission', { p_staff: id, p_rate: +v, p_from: m + '-01' }); if (error) return alert(error.message); return loadFinance(); }
+    const dl = e.target.closest('[data-ratedel]');
+    if (dl) { const [id, from] = dl.dataset.ratedel.split('|'); if (!confirm('Remove this rate?')) return;
+      const { error } = await sb.rpc('ngd_set_commission', { p_staff: id, p_rate: null, p_from: from }); if (error) return alert(error.message); return loadFinance(); }
+    if (e.target.closest('#homeMoney')) { const nb = document.querySelector('.navbtn[data-key="finance"]'); if (nb) nb.click(); }
+  });
+  document.addEventListener('change', e => { if (e.target.id === 'finMonth' && e.target.value) { FIN_P = e.target.value; loadFinance(); } });
+  (async () => { const n = new Date(); const [f, t] = monthRange(n.getFullYear(), n.getMonth());
+    const { data } = await sb.rpc('ngd_finance_summary', { p_from: f, p_to: t }); const hm = document.getElementById('homeMoney'); if (!data || !hm) return;
+    const me = (data.artists || []).find(a => a.id === currentUser.id);
+    hm.innerHTML = data.all
+      ? `<div style="font-size:10.5px; color:var(--muted);">📊 This month so far</div><div style="font-size:15px; font-weight:600; margin-top:2px;">Rp ${rupiah(data.revenue)} <span style="font-size:11px; font-weight:400; color:var(--muted);">· ${data.count} treatments · ${data.clients} clients</span></div>`
+      : `<div style="font-size:10.5px; color:var(--muted);">📊 My pay this month so far</div><div style="font-size:15px; font-weight:600; margin-top:2px;">Rp ${rupiah(me ? me.commission : 0)} <span style="font-size:11px; font-weight:400; color:var(--muted);">· ${data.count} treatments</span></div>`;
+    hm.style.display = ''; })();
+}
+
 // ---------- CLIENT ACTIVITY (owner only) ----------
 if (currentUser.role === 'Owner'){
   pages.insertAdjacentHTML('beforeend', `
@@ -2132,6 +2244,7 @@ document.getElementById('topnav').addEventListener('click', e => {
   if (b.dataset.key === 'activity' && window.loadActivity) loadActivity();
   if (b.dataset.key === 'clientact' && window.loadClientActivity) loadClientActivity();
   if (b.dataset.key === 'website' && window.loadGifts) loadGifts();
+  if (b.dataset.key === 'finance' && window.loadFinance) loadFinance();
   if (b.dataset.key === 'treat') loadTreatments();
   if (b.dataset.key === 'knowledge') loadMaterials();
   if (b.dataset.key === 'admin' && window.loadStorage) loadStorage();
