@@ -1594,7 +1594,7 @@ function treatmentRowHtml(t){
   const canConfirm = (isOwner || currentUser.role === 'Admin') && t.status === 'pending';
   return `<div style="border-top:1px solid var(--hairline); padding:10px 0;">
     <div class="row" style="justify-content:space-between;"><b style="font-weight:600; font-size:12.5px;">${esc(client ? client.name : 'Client')}</b><span class="tag">${esc(t.status)}</span></div>
-    <div style="font-size:10.5px; color:var(--muted); margin-bottom:4px;">${t.treatment_date} · ${esc(t.artist_name||'')}</div>
+    <div style="font-size:10.5px; color:var(--muted); margin-bottom:4px;">${t.order_type === 'press_on' ? '📦 Press-on order · ' : ''}${t.treatment_date} · ${esc(t.artist_name||'')}</div>
     ${items}
     ${t.discount_amount ? `<div class="row" style="justify-content:space-between; font-size:12px; color:#B0566A;"><span>${esc(t.discount_label||'Discount')}</span><span>−${rupiah(t.discount_amount)}</span></div>` : ''}
     ${t.coupon_id ? `<div style="font-size:11px; color:#B0566A;">🏷️ Coupon applied</div>` : ''}
@@ -1628,9 +1628,12 @@ function openTreatmentForm(clientId, editT){
   const defaultArtist = currentUser.role === 'Admin' ? (artists()[0]||{}).name : currentUser.name;
   box.innerHTML = `
   <div class="card" id="tf">
-    <div class="eyebrow">${editT ? 'Edit treatment' : 'New treatment'}</div>
+    <div class="eyebrow">${editT ? (editT.order_type === 'press_on' ? 'Edit press-on order' : 'Edit treatment') : 'New treatment'}</div>
     <div style="display:grid; gap:8px; margin-top:8px;">
-      <select id="tfClient"><option value="">Choose client…</option>${clients.map(c => `<option value="${c.id}" ${c.id===clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
+      ${editT ? '' : `<div class="row" style="gap:6px;"><button class="pill tap active" data-tftype="studio" style="flex:1; text-align:center;">💅 In the studio</button><button class="pill tap" data-tftype="press_on" style="flex:1; text-align:center;">📦 Press-on order</button></div>
+      <div id="tfTypeHint" style="font-size:10.5px; color:var(--muted); display:none;">Press-on orders don't add a loyalty stamp. Pick the press-on items from the price list — the nail artist's pay takes off the press-on cost automatically.</div>`}
+      <select id="tfClient"><option value="">Choose client…</option>${editT ? '' : '<option value="__new">＋ New client…</option>'}${clients.map(c => `<option value="${c.id}" ${c.id===clientId?'selected':''}>${esc(c.name)}</option>`).join('')}</select>
+      <div id="tfNewClient" style="display:none; gap:6px;"><input id="tfNcName" placeholder="Name"><div class="row" style="gap:6px;"><input id="tfNcIg" placeholder="Instagram" style="flex:1;"><input id="tfNcWa" placeholder="WhatsApp" inputmode="tel" style="flex:1;"></div><button class="btn-ghost tap" id="tfNcSave" style="font-size:11.5px;">Save new client</button></div>
       <div id="tfLoyalty" style="font-size:11px; color:var(--muted);"></div>
       <div class="row" style="gap:6px;">
         <input id="tfDate" type="date" value="${todayISO()}" style="flex:1;" />
@@ -1679,10 +1682,12 @@ function openTreatmentForm(clientId, editT){
       document.getElementById('tfLoyalty').innerHTML = (c && c.sensitivity ? `<div style="background:#FBE9E7; color:#8A2D1F; border-radius:10px; padding:8px 10px; margin-bottom:6px;"><b>⚠️ Allergy / sensitivity:</b> ${esc(c.sensitivity)}</div>` : '') + (c && c.clientAllergy ? `<div style="background:#FBE9E7; color:#8A2D1F; border-radius:10px; padding:8px 10px; margin-bottom:6px;"><b>⚠️ Client says:</b> ${esc(c.clientAllergy)}</div>` : '') + `This will be visit <b>${nextVisit}</b> (stamp ${cycle} of 10).` + rewardPicker(c, nextVisit, cycle, bday);
     }
     window._tfSheet = sheet;
+    if (window._tfType === 'press_on'){ window._tfReward = null; const c = cid && clients.find(x => x.id === cid);
+      document.getElementById('tfLoyalty').innerHTML = c && c.sensitivity ? `<div style="background:#FBE9E7; color:#8A2D1F; border-radius:10px; padding:8px 10px;"><b>⚠️ Allergy / sensitivity:</b> ${esc(c.sensitivity)}</div>` : ''; }
     if (window._tfApplyReward) window._tfApplyReward();
     document.getElementById('tfItemsList').innerHTML =
       past.map(l => `<option value="${esc(l)}">⟲ ordered before</option>`).join('') +
-      sheet.filter(s => !past.includes(s.label)).map(s => `<option value="${esc(s.label)}">${esc(s.sec)} · ${esc(s.price)}</option>`).join('');
+      sheet.filter(s => !past.includes(s.label)).sort((a, b) => window._tfType === 'press_on' ? (/press/i.test(b.sec) - /press/i.test(a.sec)) : 0).map(s => `<option value="${esc(s.label)}">${esc(s.sec)} · ${esc(s.price)}</option>`).join('');
   };
   const recalc = () => {
     let sum = 0;
@@ -1709,6 +1714,30 @@ function openTreatmentForm(clientId, editT){
     recalc();
   }
   document.getElementById('tfAddRow').onclick = addRow;
+  window._tfType = editT ? (editT.order_type || 'studio') : 'studio';
+  box.querySelectorAll('[data-tftype]').forEach(b => b.onclick = () => {
+    window._tfType = b.dataset.tftype;
+    box.querySelectorAll('[data-tftype]').forEach(x => x.classList.toggle('active', x === b));
+    document.getElementById('tfTypeHint').style.display = window._tfType === 'press_on' ? '' : 'none';
+    document.getElementById('tfSave').textContent = window._tfType === 'press_on' ? 'Save press-on order' : 'Save treatment';
+    const L = document.getElementById('tfDiscLabel'); if (L.dataset.auto){ L.value = ''; document.getElementById('tfDisc').value = ''; delete L.dataset.auto; }
+    refreshList(); recalc();
+  });
+  const tfCl = document.getElementById('tfClient');
+  tfCl.addEventListener('change', () => { const nc = document.getElementById('tfNewClient'); if (tfCl.value === '__new'){ nc.style.display = 'grid'; document.getElementById('tfNcName').focus(); } else nc.style.display = 'none'; });
+  const ncBtn = document.getElementById('tfNcSave');
+  if (ncBtn) ncBtn.onclick = async () => {
+    const name = document.getElementById('tfNcName').value.trim(), ig = document.getElementById('tfNcIg').value.trim().replace(/^@+/, ''), wa = document.getElementById('tfNcWa').value.trim();
+    if (!name) return alert('Name is required.');
+    ncBtn.disabled = true; ncBtn.textContent = 'Saving…';
+    const payload = { name, instagram: ig || null, phone: wa || null, artist: document.getElementById('tfArtist').value, visits: 0, birthday: '', rating: 5, note: '', shared_note: '', last_visit: '', pref: [], created_by: currentUser.id };
+    const { data, error } = await sb.from('ngd_clients').insert(payload).select().single();
+    ncBtn.disabled = false; ncBtn.textContent = 'Save new client';
+    if (error) return alert('Could not save client: ' + error.message);
+    const c = mapClientRow(data); clients.push(c);
+    tfCl.insertAdjacentHTML('beforeend', `<option value="${c.id}">${esc(c.name)}</option>`); tfCl.value = c.id;
+    document.getElementById('tfNewClient').style.display = 'none'; refreshList();
+  };
   document.getElementById('tfArtist').onchange = refreshList;
   document.getElementById('tfClient').onchange = refreshList;
   document.getElementById('tfDate').onchange = () => { if (!window._tfEdit) refreshList(); };
@@ -1770,7 +1799,7 @@ function openTreatmentForm(clientId, editT){
       box.innerHTML = ''; await loadTreatments(); return;
     }
     const client_id = document.getElementById('tfClient').value;
-    if (!client_id) return alert('Choose a client first.');
+    if (!client_id || client_id === '__new') return alert('Choose a client first (or save the new client).');
     const items = [...rows.querySelectorAll('.tfRow')].map(r => {
       const label = r.querySelector('.tfLabel').value.trim(), qty = +r.querySelector('.tfQty').value||1, unit = +r.querySelector('.tfUnit').value||0;
       const hit = (window._tfSheet||[]).find(s => s.label === label);
@@ -1781,14 +1810,14 @@ function openTreatmentForm(clientId, editT){
     const artist = people.find(p => p.name === artistName);
     const payload = { client_id, treatment_date: document.getElementById('tfDate').value || todayISO(), artist_id: artist ? artist.id : null, artist_name: artistName,
       items, discount_label: document.getElementById('tfDiscLabel').value.trim() || null, discount_amount: +document.getElementById('tfDisc').value || 0,
-      total: recalc(), tip: +document.getElementById('tfTip').value || 0, note: document.getElementById('tfNote').value.trim() || null, created_by: currentUser.id, reward: (() => {
-        const R = window._tfReward; if (!R || !R.opts.length) return null;
+      total: recalc(), tip: +document.getElementById('tfTip').value || 0, order_type: window._tfType === 'press_on' ? 'press_on' : 'studio', counts_as_visit: window._tfType !== 'press_on', note: document.getElementById('tfNote').value.trim() || null, created_by: currentUser.id, reward: (() => {
+        const R = window._tfReward; if (window._tfType === 'press_on' || !R || !R.opts.length) return null;
         const sel = box.querySelector('input[name="tfRw"]:checked'); const pick = sel && sel.value !== 'none' ? R.opts[+sel.value] : null;
         return { earned: R.earned, use: pick ? (pick.from === 'birthday' ? {from:'birthday', key:pick.key} : pick.from === 'now' ? {from:'now', cycle:pick.cycle} : {from:'saved', cycle:pick.cycle, earned_visit:pick.earned_visit}) : null };
       })() };
     const btn = document.getElementById('tfSave'); btn.disabled = true; btn.textContent = 'Saving…';
     const { data, error } = await sb.from('ngd_treatments').insert(payload).select().single();
-    btn.disabled = false; btn.textContent = 'Save treatment';
+    btn.disabled = false; btn.textContent = window._tfType === 'press_on' ? 'Save press-on order' : 'Save treatment';
     if (error) return alert('Could not save: ' + error.message);
     const code = document.getElementById('tfCoupon').value.trim();
     if (code){
