@@ -260,6 +260,7 @@ function clientCardHtml(c){
     <div style="font-size:10.5px; color:var(--muted); margin-top:8px;">🎂 ${c.birthday} · visits count when the owner/admin confirms a treatment</div>
     <div class="divider"></div>
     ${clientExtrasHtml(c)}
+    ${currentUser.role === 'Owner' ? `<button class="btn-ghost tap" data-delclient="${c.id}" style="width:100%; margin-top:10px; font-size:11px; padding:8px; color:#8A2D1F; border-color:#E8C9C2;">🗑 Delete client</button>` : ''}
   </div>`;
 }
 pages.insertAdjacentHTML('beforeend', `
@@ -1354,6 +1355,24 @@ document.addEventListener('click', async e => {
     const { error } = await sb.rpc('ngd_delete_client_login', { p_client_id: c.id });
     if (error) return alert(error.message);
     c.username = ''; c.hasLogin = false; c.mustSetPin = false; renderClients(document.getElementById('clientSearch').value);
+  }
+  if (t.dataset.delclient){
+    const c = clients.find(x => x.id === t.dataset.delclient); if (!c) return;
+    const { data: f, error: fe } = await sb.rpc('ngd_client_files', { p_client_id: c.id });
+    if (fe) return alert(fe.message);
+    if (f.upcoming > 0) return alert(`${c.name} still has ${f.upcoming} upcoming booking${f.upcoming > 1 ? 's' : ''}.\n\nCancel it in Bookings first, then delete the client.`);
+    if (!confirm(`Delete ${c.name} permanently?\n\nThis removes their client card, website login, treatment history, loyalty stamps, notes, coupons, letters, chat, love notes, Today's Sets and photos.\n\nPast bookings stay in the schedule with their name only.\n\nThis cannot be undone.`)) return;
+    const typed = prompt(`To confirm, type the client's name exactly:\n${c.name}`);
+    if (typed === null) return;
+    if (typed.trim().toLowerCase() !== String(c.name).trim().toLowerCase()) return alert('The name does not match. Nothing was deleted.');
+    t.disabled = true; t.textContent = 'Deleting…';
+    const rm = async (bucket, paths) => { if (paths && paths.length) await sb.storage.from(bucket).remove(paths); };
+    const { error } = await sb.rpc('ngd_delete_client', { p_client_id: c.id });
+    if (error){ t.disabled = false; t.textContent = '🗑 Delete client'; return alert(error.message); }
+    await Promise.all([rm('ngd-client-photos', f.photos), rm('ngd-dp', f.dp), rm('ngd-sets', f.sets)]).catch(() => {});
+    clients = clients.filter(x => x.id !== c.id);
+    renderClients(document.getElementById('clientSearch').value);
+    alert(`${c.name} has been deleted. This is recorded in Activity.`);
   }
   if (t.dataset.editdetails){
     const id = t.dataset.editdetails, box = document.getElementById('edit-' + id);
