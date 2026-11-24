@@ -1599,6 +1599,7 @@ function treatmentRowHtml(t){
     ${t.discount_amount ? `<div class="row" style="justify-content:space-between; font-size:12px; color:#B0566A;"><span>${esc(t.discount_label||'Discount')}</span><span>−${rupiah(t.discount_amount)}</span></div>` : ''}
     ${t.coupon_id ? `<div style="font-size:11px; color:#B0566A;">🏷️ Coupon applied</div>` : ''}
     <div class="row" style="justify-content:space-between; font-size:12.5px; font-weight:600; border-top:1px solid var(--text); margin-top:4px; padding-top:4px;"><span>Total</span><span>Rp ${rupiah(t.total)}</span></div>
+    ${t.tip ? `<div class="row" style="justify-content:space-between; font-size:11.5px; color:var(--muted);"><span>Tip for ${esc(t.artist_name||'the nail artist')}</span><span>Rp ${rupiah(t.tip)}</span></div>` : ''}
     ${t.note ? `<div style="font-size:11px; color:var(--muted); margin-top:4px;">Note for client: ${esc(t.note)}</div>` : ''}
     ${canConfirm ? `<div class="row" style="gap:6px; margin-top:8px;"><button class="btn-primary tap" data-confirm="${t.id}" style="flex:1; font-size:11px; padding:7px;">✓ Confirm price</button></div>` : ''}
     ${canEditTreat(t) ? `<div class="row" style="gap:6px; margin-top:8px;"><button class="btn-ghost tap" data-edittreat="${t.id}" style="flex:1; font-size:11px; padding:7px;">✎ Edit</button><button class="btn-ghost tap" data-deltreat="${t.id}" style="flex:1; font-size:11px; padding:7px; color:#8A2D1F;">🗑 Delete</button></div>` : ''}
@@ -1646,6 +1647,7 @@ function openTreatmentForm(clientId, editT){
       <div style="font-size:10.5px; color:var(--muted); margin-top:-2px;">Only if there is a discount. Name = what the client sees (e.g. "Loyalty stamp 8 – 15% off"), amount = how many rupiah are taken off (e.g. 52500). Leave both empty if none.</div>
       <input id="tfCoupon" placeholder="Coupon / gift card code (only if the client shows one)" style="text-transform:uppercase;" autocapitalize="characters" />
       <div id="tfCouponInfo" style="font-size:11px; color:var(--muted); margin-top:-2px;"></div>
+      <input id="tfTip" type="number" inputmode="numeric" placeholder="Tip Rp (optional — 100% to the nail artist)" />
       <textarea id="tfNote" placeholder="Note the client will see (color, shape, design…)" style="min-height:44px;"></textarea>
       <div class="row" style="justify-content:space-between; font-weight:600;"><span>Total</span><span id="tfTotal">Rp 0</span></div>
       <button class="btn-primary tap" id="tfSave" style="width:100%;">Save treatment</button>
@@ -1700,7 +1702,7 @@ function openTreatmentForm(clientId, editT){
     (editT.items||[]).forEach(i => { addRow(); const r = rows.lastElementChild; r.querySelector('.tfLabel').value = i.label||''; r.querySelector('.tfQty').value = i.qty||1; r.querySelector('.tfUnit').value = i.unit_price != null ? i.unit_price : (i.amount||0); r.dataset.kind = i.kind||''; });
     if (!(editT.items||[]).length) addRow();
     document.getElementById('tfDiscLabel').value = editT.discount_label || ''; document.getElementById('tfDisc').value = editT.discount_amount || '';
-    document.getElementById('tfNote').value = editT.note || '';
+    document.getElementById('tfNote').value = editT.note || ''; document.getElementById('tfTip').value = editT.tip || '';
     document.getElementById('tfSave').textContent = 'Save changes';
     document.getElementById('tfSave').insertAdjacentHTML('afterend', `<button class="btn-ghost tap" id="tfCancelEdit" style="width:100%;">Cancel</button><div style="font-size:10.5px; color:var(--muted);">Status: ${esc(editT.status)}. Loyalty reward and coupon can't be changed here. Every change is recorded in Activity.</div>`);
     document.getElementById('tfCancelEdit').onclick = () => { box.innerHTML = ''; };
@@ -1763,6 +1765,8 @@ function openTreatmentForm(clientId, editT){
         p_items: items, p_discount_label: document.getElementById('tfDiscLabel').value.trim(), p_discount_amount: +document.getElementById('tfDisc').value || 0, p_note: document.getElementById('tfNote').value.trim() });
       btn.disabled = false; btn.textContent = 'Save changes';
       if (error) return alert('Could not save: ' + error.message);
+      const tipNew = +document.getElementById('tfTip').value || 0;
+      if (tipNew !== (editT.tip || 0)) { const tr = await sb.rpc('ngd_set_treatment_tip', { p_id: editT.id, p_tip: tipNew }); if (tr.error) alert('Saved, but the tip was not: ' + tr.error.message); }
       box.innerHTML = ''; await loadTreatments(); return;
     }
     const client_id = document.getElementById('tfClient').value;
@@ -1777,7 +1781,7 @@ function openTreatmentForm(clientId, editT){
     const artist = people.find(p => p.name === artistName);
     const payload = { client_id, treatment_date: document.getElementById('tfDate').value || todayISO(), artist_id: artist ? artist.id : null, artist_name: artistName,
       items, discount_label: document.getElementById('tfDiscLabel').value.trim() || null, discount_amount: +document.getElementById('tfDisc').value || 0,
-      total: recalc(), note: document.getElementById('tfNote').value.trim() || null, created_by: currentUser.id, reward: (() => {
+      total: recalc(), tip: +document.getElementById('tfTip').value || 0, note: document.getElementById('tfNote').value.trim() || null, created_by: currentUser.id, reward: (() => {
         const R = window._tfReward; if (!R || !R.opts.length) return null;
         const sel = box.querySelector('input[name="tfRw"]:checked'); const pick = sel && sel.value !== 'none' ? R.opts[+sel.value] : null;
         return { earned: R.earned, use: pick ? (pick.from === 'birthday' ? {from:'birthday', key:pick.key} : pick.from === 'now' ? {from:'now', cycle:pick.cycle} : {from:'saved', cycle:pick.cycle, earned_visit:pick.earned_visit}) : null };
@@ -2088,7 +2092,7 @@ if (['Owner','Admin','Senior artist','Junior artist'].includes(currentUser.role)
     <div class="card"><div class="eyebrow">${FIN_ALL ? 'Per nail artist' : 'My numbers'}</div><div id="finArtists" style="margin-top:6px;"></div></div>
     <div class="card"><div class="eyebrow">Top services</div><div id="finSvc" style="margin-top:6px;"></div></div>
     ${isOwner ? `<div class="card"><div class="eyebrow">Only you can change this</div><div class="title" style="font-size:15px;">Commission</div>
-      <div style="font-size:11px; color:var(--muted); margin-top:4px;">Pay is counted on the full service price. Loyalty, birthday and gift discounts are covered by the studio. A new rate only counts from the month you choose — older months stay as they were.</div>
+      <div style="font-size:11px; color:var(--muted); margin-top:4px;">Pay = (full service price − studio costs %) × rate. Press-ons also take off the press-on cost first. Loyalty, birthday and gift discounts are covered by the studio. Tips are 100% for the nail artist. A new rate only counts from the month you choose.</div>
       <div id="finRates" style="margin-top:8px;"></div></div>` : ''}
     <div style="font-size:10.5px; color:var(--muted); padding:0 6px 10px;">Only confirmed treatments are counted.</div>
   </div>`);
@@ -2121,15 +2125,16 @@ if (['Owner','Admin','Senior artist','Junior artist'].includes(currentUser.role)
           <div class="row" style="justify-content:space-between; padding:4px 0; border-top:1px solid var(--hairline);"><span>Clients paid</span><span>Rp ${rupiah(r.revenue)}</span></div>
           <div class="row" style="justify-content:space-between; padding:4px 0; color:#B0566A;"><span>Nail artist pay</span><span>− Rp ${rupiah(r.commission)}</span></div>
           <div class="row" style="justify-content:space-between; padding:6px 0 0; border-top:1px solid var(--text); font-weight:600;"><span>Studio keeps</span><span>Rp ${rupiah(keep)}</span></div>
+          ${r.tips ? `<div style="font-size:11px; color:var(--muted); margin-top:6px;">Tips this period: Rp ${rupiah(r.tips)} — paid 100% to the nail artists, not part of the studio's money.</div>` : ''}
         </div>
         ${r.pending_count ? `<div style="font-size:11px; color:var(--muted); margin-top:8px;">⏳ ${r.pending_count} treatment${r.pending_count>1?'s':''} (Rp ${rupiah(r.pending_revenue)}) still waiting for confirmation — not counted yet.</div>` : ''}`;
     } else {
       document.getElementById('finTop').innerHTML = `
         <div style="font-size:11px; color:var(--muted);">Your pay for ${finLabel()}</div>
-        <div style="font-size:28px; font-weight:600; margin-top:2px;">Rp ${rupiah(me ? me.commission : 0)}</div>
-        <div style="font-size:11px; color:var(--muted);">${me && me.rate != null ? me.rate + '% of the full service price' : 'Your commission rate isn\'t set yet — ask Gisel.'}</div>
+        <div style="font-size:28px; font-weight:600; margin-top:2px;">Rp ${rupiah(me ? me.commission + (me.tips||0) : 0)}</div>
+        <div style="font-size:11px; color:var(--muted);">${me && me.rate != null ? `${me.rate}% after ${me.cost_pct}% studio costs${me.tips ? ' · includes Rp ' + rupiah(me.tips) + ' in tips' : ''}` : 'Your commission rate isn\'t set yet — ask Gisel.'}</div>
         <div class="row" style="gap:6px; margin-top:10px;">${box(r.count, 'treatments')}${box(r.clients, 'clients')}${box('Rp ' + Math.round(r.gross / 1000) + 'K', 'service value')}</div>
-        <div style="font-size:11px; color:var(--muted); margin-top:8px;">Loyalty, birthday and gift discounts are covered by the studio — they never lower your pay.</div>
+        <div style="font-size:11px; color:var(--muted); margin-top:8px;">Loyalty, birthday and gift discounts are covered by the studio — they never lower your pay. Tips are 100% yours.</div>
         ${r.pending_count ? `<div style="font-size:11px; color:var(--muted); margin-top:6px;">⏳ ${r.pending_count} treatment${r.pending_count>1?'s':''} waiting for confirmation — counted once confirmed.</div>` : ''}`;
     }
     const arts = (r.artists || []).filter(a => r.all ? (a.count || a.role !== 'Owner') : true);
@@ -2140,7 +2145,11 @@ if (['Owner','Admin','Senior artist','Junior artist'].includes(currentUser.role)
         <div class="row" style="justify-content:space-between; padding:2px 0;"><span>Service value</span><span>Rp ${rupiah(a.gross)}</span></div>
         ${a.discounts ? `<div class="row" style="justify-content:space-between; padding:2px 0; color:var(--muted);"><span>Discounts (studio pays)</span><span>Rp ${rupiah(a.discounts)}</span></div>` : ''}
         <div class="row" style="justify-content:space-between; padding:2px 0;"><span>Clients paid</span><span>Rp ${rupiah(a.revenue)}</span></div>
-        ${a.role === 'Owner' ? '' : `<div class="row" style="justify-content:space-between; padding:4px 0 0; font-weight:600;"><span>Pay${a.rate != null ? ' · ' + a.rate + '%' : ''}</span><span>Rp ${rupiah(a.commission)}</span></div>`}
+        ${a.role === 'Owner' ? '' : `
+        <div class="row" style="justify-content:space-between; padding:2px 0; color:var(--muted);"><span>Studio costs ${a.cost_pct != null ? a.cost_pct : 20}%${a.press ? ` + press-on ${a.press}×` : ''}</span><span>− Rp ${rupiah(a.costs)}</span></div>
+        <div class="row" style="justify-content:space-between; padding:2px 0;"><span>${a.rate != null ? a.rate + '%' : '–'} of Rp ${rupiah(a.base)}</span><span>Rp ${rupiah(a.commission)}</span></div>
+        ${a.tips ? `<div class="row" style="justify-content:space-between; padding:2px 0;"><span>Tips (100%)</span><span>Rp ${rupiah(a.tips)}</span></div>` : ''}
+        <div class="row" style="justify-content:space-between; padding:4px 0 0; border-top:1px solid var(--hairline); font-weight:600;"><span>Total pay</span><span>Rp ${rupiah(a.commission + (a.tips||0))}</span></div>`}
         ${a.missing_rate && a.role !== 'Owner' ? `<div style="font-size:10.5px; color:#B0566A; margin-top:3px;">Some treatments have no commission rate yet${isOwner ? ' — set it below.' : '.'}</div>` : ''}
       </div></div>`).join('') || '<div style="font-size:12px; color:var(--muted);">Nothing yet.</div>';
     document.getElementById('finSvc').innerHTML = (r.services || []).map(x => `<div class="row" style="justify-content:space-between; font-size:12px; padding:5px 0; border-top:1px solid var(--hairline);"><span>${esc(x.label)} <span style="color:var(--muted);">× ${+x.count}</span></span><span>Rp ${rupiah(x.amount)}</span></div>`).join('') || '<div style="font-size:12px; color:var(--muted);">No confirmed treatments in this period yet.</div>';
@@ -2153,14 +2162,15 @@ if (['Owner','Admin','Senior artist','Junior artist'].includes(currentUser.role)
     el.innerHTML = staff.map(a => { const hist = FIN_RATES.filter(x => x.staff_id === a.id);
       return `<div style="border-top:1px solid var(--hairline); padding:9px 0;">
         <div class="row" style="justify-content:space-between; align-items:center; gap:6px;"><b style="font-weight:600; font-size:12.5px; flex:1;">${esc(a.name)}</b>
-          <input type="number" min="0" max="100" step="0.5" placeholder="%" data-ratein="${a.id}" style="width:60px; padding:5px 6px; font-size:12px;">
+          <input type="number" min="0" max="100" step="0.5" placeholder="%" data-ratein="${a.id}" style="width:56px; padding:5px 6px; font-size:12px;">
           <input type="month" value="${thisM}" data-ratefrom="${a.id}" style="width:auto; padding:5px 6px; font-size:11px;">
           <button class="pill tap" data-ratesave="${a.id}" style="font-size:10.5px; padding:5px 9px;">Save</button></div>
-        <div style="font-size:10.5px; color:var(--muted); margin-top:4px;">${hist.length ? hist.map(x => `${x.rate}% from ${new Date(x.valid_from + 'T00:00:00').toLocaleDateString('en-GB', { month:'short', year:'numeric' })} <span class="tap" data-ratedel="${a.id}|${x.valid_from}" style="cursor:pointer; text-decoration:underline;">remove</span>`).join(' · ') : 'No rate yet.'}</div></div>`; }).join('');
+        <div class="row" style="gap:6px; align-items:center; font-size:10.5px; color:var(--muted); margin-top:5px;">Costs <input type="number" min="0" max="100" value="20" data-ratecost="${a.id}" style="width:48px; padding:4px 5px; font-size:11px;">% · press-on cost Rp <input type="number" min="0" value="15000" data-ratepress="${a.id}" style="width:72px; padding:4px 5px; font-size:11px;"></div>
+        <div style="font-size:10.5px; color:var(--muted); margin-top:4px;">${hist.length ? hist.map(x => `${x.rate}% (costs ${x.cost_pct}%, press-on Rp ${rupiah(x.press_on_cost)}) from ${new Date(x.valid_from + 'T00:00:00').toLocaleDateString('en-GB', { month:'short', year:'numeric' })} <span class="tap" data-ratedel="${a.id}|${x.valid_from}" style="cursor:pointer; text-decoration:underline;">remove</span>`).join(' · ') : 'No rate yet.'}</div></div>`; }).join('');
   }
   window.loadFinance = async function(){
     const [f, t] = finRange();
-    const [a, b] = await Promise.all([sb.rpc('ngd_finance_summary', { p_from: f, p_to: t }), isOwner ? sb.from('ngd_commission_rates').select('staff_id, rate, valid_from').order('valid_from') : Promise.resolve({ data: [] })]);
+    const [a, b] = await Promise.all([sb.rpc('ngd_finance_summary', { p_from: f, p_to: t }), isOwner ? sb.from('ngd_commission_rates').select('staff_id, rate, valid_from, cost_pct, press_on_cost').order('valid_from') : Promise.resolve({ data: [] })]);
     if (a.error) { document.getElementById('finTop').innerHTML = `<div style="font-size:12px; color:#B0566A;">${esc(a.error.message)}</div>`; return; }
     FIN = a.data; FIN_RATES = b.data || []; finRender();
   };
@@ -2169,7 +2179,8 @@ if (['Owner','Admin','Senior artist','Junior artist'].includes(currentUser.role)
     const sv = e.target.closest('[data-ratesave]');
     if (sv) { const id = sv.dataset.ratesave; const v = document.querySelector(`[data-ratein="${id}"]`).value; const m = document.querySelector(`[data-ratefrom="${id}"]`).value;
       if (v === '' || !m) return alert('Fill in the % and the month.');
-      const { error } = await sb.rpc('ngd_set_commission', { p_staff: id, p_rate: +v, p_from: m + '-01' }); if (error) return alert(error.message); return loadFinance(); }
+      const cost = document.querySelector(`[data-ratecost="${id}"]`).value, press = document.querySelector(`[data-ratepress="${id}"]`).value;
+      const { error } = await sb.rpc('ngd_set_commission', { p_staff: id, p_rate: +v, p_from: m + '-01', p_cost: cost === '' ? 20 : +cost, p_press: press === '' ? 15000 : +press }); if (error) return alert(error.message); return loadFinance(); }
     const dl = e.target.closest('[data-ratedel]');
     if (dl) { const [id, from] = dl.dataset.ratedel.split('|'); if (!confirm('Remove this rate?')) return;
       const { error } = await sb.rpc('ngd_set_commission', { p_staff: id, p_rate: null, p_from: from }); if (error) return alert(error.message); return loadFinance(); }
@@ -2181,7 +2192,7 @@ if (['Owner','Admin','Senior artist','Junior artist'].includes(currentUser.role)
     const me = (data.artists || []).find(a => a.id === currentUser.id);
     hm.innerHTML = data.all
       ? `<div style="font-size:10.5px; color:var(--muted);">📊 This month so far</div><div style="font-size:15px; font-weight:600; margin-top:2px;">Rp ${rupiah(data.revenue)} <span style="font-size:11px; font-weight:400; color:var(--muted);">· ${data.count} treatments · ${data.clients} clients</span></div>`
-      : `<div style="font-size:10.5px; color:var(--muted);">📊 My pay this month so far</div><div style="font-size:15px; font-weight:600; margin-top:2px;">Rp ${rupiah(me ? me.commission : 0)} <span style="font-size:11px; font-weight:400; color:var(--muted);">· ${data.count} treatments</span></div>`;
+      : `<div style="font-size:10.5px; color:var(--muted);">📊 My pay this month so far</div><div style="font-size:15px; font-weight:600; margin-top:2px;">Rp ${rupiah(me ? me.commission + (me.tips||0) : 0)} <span style="font-size:11px; font-weight:400; color:var(--muted);">· ${data.count} treatments</span></div>`;
     hm.style.display = ''; })();
 }
 
