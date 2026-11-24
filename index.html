@@ -725,26 +725,28 @@ const WTXT = {
 const WELCOME_QR = ["111111100010110011111001001111111", "100000100000111101001010001000001", "101110101101110111101110101011101", "101110101100001110001001101011101", "101110101001110100100001001011101", "100000101001100110101110001000001", "111111101010101010101010101111111", "000000001111100100000100100000000", "101111100000011111000011101111100", "100100001011001010011001001101101", "100001101001000110100010011010110", "100000011000001100010110110011101", "010101101011100000100100110111011", "101111010011111110001101010100011", "010000100111100000010100111011110", "110110000011010010111110011001100", "111101100010001001011010110110001", "001101000110001011111011001101101", "001010110101010111001010100110100", "110001001011011011110001011111101", "011010111101000110001111110101000", "111001000000110101100101011001001", "100101110110101111001000011111010", "100010011110100100000100001010101", "111111101010110101000010111110011", "000000001011110010011110100010101", "111111100100111100101101101010110", "100000101001100010001111100011110", "101110101110100000110100111111010", "101110101101000110001111010011001", "101110101011100001110111101101000", "100000100100001010111101010011100", "111111101000011001110001100100110"]; // QR for https://ngnailart-creator.github.io/NG-Studio/ (generated once and checked)
 async function drawWelcome(name, user, code){
   const cv = document.createElement('canvas'); cv.width = 1080; cv.height = 1350; const g = cv.getContext('2d');
-  try { await document.fonts.load('60px "Abhaya Libre"'); await document.fonts.load('500 30px "Abhaya Libre"'); } catch(_) {}
+  const FF = '"Abhaya Libre", Georgia, serif';
+  try { await document.fonts.load('80px "Abhaya Libre"'); await document.fonts.load('500 40px "Abhaya Libre"'); } catch(_) {}
   const logo = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = WELCOME_LOGO; });
-  const INK = '#141414', MUT = '#8a827b', LS = v => { if ('letterSpacing' in g) g.letterSpacing = v; };
-  g.fillStyle = '#FFF7EF'; g.fillRect(0, 0, 1080, 1350);
-  g.strokeStyle = '#E6D9CC'; g.lineWidth = 2; g.strokeRect(40, 40, 1000, 1270);
+  const INK = '#141414', MUT = '#8a827b', BEIGE = '#FFF7EF';
+  g.fillStyle = '#FFFFFF'; g.fillRect(0, 0, 1080, 1350);
   g.textAlign = 'center'; g.textBaseline = 'alphabetic';
-  if (logo){ const lw = 170, lh = lw * logo.height / logo.width; g.drawImage(logo, 540 - lw / 2, 105, lw, lh); }
-  g.fillStyle = INK; g.font = '76px "Abhaya Libre", Georgia, serif'; g.fillText(`Hi ${name},`, 540, 395);
-  g.fillStyle = MUT; g.font = '400 34px "Abhaya Libre", Georgia, serif'; g.fillText('your NG Nailart client page is ready.', 540, 450);
-  // QR code
-  const n = WELCOME_QR.length, size = 320, m = size / n, qx = 540 - size / 2, qy = 530;
-  g.fillStyle = '#FFFFFF'; g.beginPath(); g.roundRect ? g.roundRect(qx - 44, qy - 44, size + 88, size + 88, 26) : g.rect(qx - 44, qy - 44, size + 88, size + 88); g.fill();
-  g.strokeStyle = '#E6D9CC'; g.lineWidth = 2; g.stroke();
+  if (logo){ const lw = 120, lh = lw * logo.height / logo.width; g.drawImage(logo, 540 - lw / 2, 80, lw, lh); }
+  g.fillStyle = INK; g.font = `84px ${FF}`; g.fillText(`Hi ${name},`, 540, 330);
+  g.fillStyle = MUT; g.font = `34px ${FF}`; g.fillText('your client page is ready.', 540, 382);
+  // soft beige block holding the QR, like a product on a plain backdrop
+  const bx = 90, by = 440, bw = 900, bh = 520;
+  g.fillStyle = BEIGE; g.beginPath(); g.roundRect ? g.roundRect(bx, by, bw, bh, 36) : g.rect(bx, by, bw, bh); g.fill();
+  const n = WELCOME_QR.length, size = 330, m = size / n, qx = 540 - size / 2, qy = by + 72;
+  g.fillStyle = '#FFFFFF'; g.beginPath(); g.roundRect ? g.roundRect(qx - 26, qy - 26, size + 52, size + 52, 22) : g.rect(qx - 26, qy - 26, size + 52, size + 52); g.fill();
   g.fillStyle = INK; WELCOME_QR.forEach((row, y) => { for (let x = 0; x < n; x++) if (row[x] === '1') g.fillRect(Math.floor(qx + x * m), Math.floor(qy + y * m), Math.ceil(m), Math.ceil(m)); });
-  g.fillStyle = MUT; g.font = '400 23px "Abhaya Libre", Georgia, serif'; LS('6px'); g.fillText('SCAN TO OPEN', 540, qy + size + 82); LS('0px');
-  // username + code
-  g.fillStyle = MUT; g.font = '400 22px "Abhaya Libre", Georgia, serif'; LS('6px'); g.fillText('USERNAME', 540, 1035); g.fillText('ONE-TIME CODE', 540, 1140); LS('0px');
-  g.fillStyle = INK; g.font = '400 44px "Abhaya Libre", Georgia, serif'; g.fillText(user, 540, 1085);
-  g.font = '500 66px "Abhaya Libre", Georgia, serif'; LS('16px'); g.fillText(String(code), 548, 1210); LS('0px');
-  g.fillStyle = MUT; g.font = '400 27px "Abhaya Libre", Georgia, serif'; g.fillText('Log in, then create your own PIN.', 540, 1268);
+  g.fillStyle = MUT; g.font = `28px ${FF}`; g.fillText('scan to open', 540, by + bh - 40);
+  // username + code, side by side
+  const cy = 1075;
+  g.fillStyle = MUT; g.font = `28px ${FF}`; g.fillText('username', 330, cy); g.fillText('one-time code', 750, cy);
+  g.fillStyle = INK; g.font = `52px ${FF}`; g.fillText(user, 330, cy + 66);
+  g.font = `500 56px ${FF}`; if ('letterSpacing' in g) g.letterSpacing = '6px'; g.fillText(String(code), 753, cy + 66); if ('letterSpacing' in g) g.letterSpacing = '0px';
+  g.fillStyle = MUT; g.font = `30px ${FF}`; g.fillText('Log in, then create your own PIN.', 540, 1262);
   return cv;
 }
 async function openWelcome(c, user, code){
