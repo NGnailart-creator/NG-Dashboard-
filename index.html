@@ -234,18 +234,36 @@ async function loadClientPhotos(){
   }
   renderClients((document.getElementById('clientSearch')||{}).value || '');
 }
-function clientCardHtml(c){
+const OPEN_CLIENTS = new Set();
+document.addEventListener('click', e => {
+  const h = e.target.closest('[data-cltoggle]'); if (!h) return;
+  const id = h.dataset.cltoggle; OPEN_CLIENTS.has(id) ? OPEN_CLIENTS.delete(id) : OPEN_CLIENTS.add(id);
+  const c = clients.find(x => x.id === id), el = document.getElementById('cl-' + id); if (c && el) el.outerHTML = clientCardHtml(c, OPEN_CLIENTS.has(id));
+});
+function clientCardHtml(c, forceOpen){
+  const open = forceOpen || OPEN_CLIENTS.has(c.id);
+  const av = `<div class="avatar" style="overflow:hidden; ${open ? '' : 'width:40px; height:40px; font-size:15px;'}">${c.photo && CLIENT_PHOTO_URLS[c.photo] ? `<img src="${CLIENT_PHOTO_URLS[c.photo]}" style="width:100%; height:100%; object-fit:cover;">` : esc((c.name||'?')[0])}</div>`;
+  const flags = [ (c.sensitivity || c.clientAllergy) ? '<span title="Allergy / sensitivity">⚠️</span>' : '', (c.savedRewards||[]).some(r => r.use_by > c.visits) ? '<span title="Saved reward">🎁</span>' : '', Object.keys(c.achReq||{}).length ? '<span title="Tick request">✋</span>' : '' ].join('');
+  const sub = [c.instagram ? '@' + esc(String(c.instagram).replace(/^@+/, '')) : '', c.last && c.last !== '—' ? 'last ' + esc(c.last) : '', c.artist && c.artist !== '—' ? esc(c.artist) : ''].filter(Boolean).join(' · ');
+  if (!open) return `
+  <div class="card tap" id="cl-${c.id}" data-cltoggle="${c.id}" style="cursor:pointer; padding-top:12px; padding-bottom:12px;">
+    <div class="row" style="gap:12px; align-items:center;">${av}
+      <div style="flex:1; min-width:0;"><div style="font-weight:600; font-size:14.5px;">${esc(c.name)} ${flags}</div>
+        ${sub ? `<div style="font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${sub}</div>` : ''}</div>
+      <div class="tag" style="flex:none;">${c.visits} visits</div><span style="color:var(--muted); font-size:14px;">›</span>
+    </div>
+  </div>`;
   return `
-  <div class="card">
-    <div class="row">
-      <div class="avatar" style="overflow:hidden;">${c.photo && CLIENT_PHOTO_URLS[c.photo] ? `<img src="${CLIENT_PHOTO_URLS[c.photo]}" style="width:100%; height:100%; object-fit:cover;">` : c.name[0]}</div>
+  <div class="card" id="cl-${c.id}">
+    <div class="row" data-cltoggle="${c.id}" style="cursor:pointer;">
+      ${av}
       <div style="flex:1">
-        <div style="font-family:Montserrat,sans-serif; font-weight:600; font-size:15.5px;">${c.name}</div>
+        <div style="font-family:Montserrat,sans-serif; font-weight:600; font-size:15.5px;">${esc(c.name)}</div>
         <div style="font-size:11.5px; color:var(--muted);">Last visit ${c.last} · main artist ${esc(c.artist)}</div>
         ${artistCountLine(c)}
         ${(c.savedRewards||[]).filter(r => r.use_by > c.visits).map(r => `<div style="font-size:11px; color:#8A2D1F; margin-top:2px;">🎁 Saved reward: ${esc(rewardName(r.cycle))} · use by visit ${r.use_by}</div>`).join('')}
       </div>
-      <div class="tag">${c.visits} visits</div>
+      <div class="tag">${c.visits} visits</div><span style="color:var(--muted); font-size:14px; transform:rotate(90deg); display:inline-block;">›</span>
     </div>
     <div class="divider"></div>
     <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
@@ -328,7 +346,7 @@ function renderClients(filter){
   const f = (filter||'').toLowerCase().trim();
   const scoped = isOwnerOrAdmin ? clients : clients.filter(c => c.artist.startsWith(currentUser.name));
   const results = scoped.filter(c => !f || (c.name+' '+c.pref.join(' ')+' '+c.note+' '+c.sharedNote+' '+c.artist+' '+(c.instagram||'')+' '+(c.area||'')+' '+(c.phone||'')+' '+(c.username||'')+' '+(c.sensitivity||'')).toLowerCase().includes(f));
-  document.getElementById('clientResults').innerHTML = (f ? '' : achRequestsHtml(scoped)) + (results.length ? results.map(clientCardHtml).join('') : `<div class="card"><div style="font-size:12.5px; color:var(--muted);">No clients yet — add your first one below.</div></div>`);
+  document.getElementById('clientResults').innerHTML = (f ? '' : achRequestsHtml(scoped)) + (results.length ? results.map(c => clientCardHtml(c, results.length === 1)).join('') : `<div class="card"><div style="font-size:12.5px; color:var(--muted);">No clients yet — add your first one below.</div></div>`);
 }
 document.addEventListener('click', e => { const g = e.target.closest('[data-achgo]'); if (!g) return; const s = document.getElementById('clientSearch'); s.value = g.dataset.achgo; renderClients(s.value); });
 document.getElementById('clientSearch').oninput = e => renderClients(e.target.value);
@@ -2098,7 +2116,7 @@ calPage.firstElementChild.insertAdjacentHTML('afterend', `
   <div class="card" id="bkReqCard"><div class="eyebrow">From the client website</div><div class="title">Booking requests</div><div id="bkReqList" style="margin-top:8px;"><div style="font-size:12px; color:var(--muted);">Loading…</div></div></div>
   <div class="card" id="bkSchedCard">
     <div class="eyebrow">Open & close times</div><div class="title">Schedule</div>
-    <div style="font-size:11px; color:var(--muted); margin-top:6px;">Tap a time to open or close it for web booking. You'll be asked to confirm, and every change is saved in Activity and sent to the owner & admin.</div>
+    <div style="font-size:11px; color:var(--muted); margin-top:4px;">Tap a time to open or close it.</div>
     <div class="row" style="gap:6px; margin-top:10px;">
       <select id="bkSchArtist" style="flex:1;">${bookArtists().filter(a => isOwnerOrAdmin || a.id === currentUser.id).map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select>
     </div>
@@ -2113,16 +2131,17 @@ calPage.firstElementChild.insertAdjacentHTML('afterend', `
     <div id="bkEditBar" style="margin-top:8px;"></div>
     <div id="bkMonth" style="margin-top:6px;"></div>
     <button class="btn-primary tap" id="bkIgBtn" style="width:100%; margin-top:10px;">⬇ Download schedule for Instagram</button>
-    <div class="row" style="gap:6px; margin-top:8px;">
+    <button class="btn-primary tap" id="bkAddBtn" style="width:100%; margin-top:8px;">+ Add booking for a client</button>
+    <div id="bkAddForm"></div>
+    <details class="ngmore" style="margin-top:8px;"><summary class="tap" style="list-style:none; cursor:pointer; font-size:11.5px; color:var(--muted); text-align:center; padding:6px;">More options ▾</summary>
+    <div class="row" style="gap:6px; margin-top:6px;">
       <button class="btn-ghost tap" id="bkCloseMonth" style="flex:1; font-size:11px;">🚫 Close all this month</button>
       <button class="btn-ghost tap" id="bkOpenMonth" style="flex:1; font-size:11px;">↺ Reopen usual times</button>
     </div>
-    <div style="font-size:10px; color:var(--muted); margin-top:4px;">Use ⊘ on a row to close the whole day. Times that already have a booking stay as they are.</div>
-    <div class="divider"></div>
-    <div style="font-size:11px; font-weight:600;">Open a time on another day</div>
+    <div style="font-size:10px; color:var(--muted); margin-top:4px;">⊘ on a row closes the whole day · ⧉ sets special sessions. Times with a booking stay as they are.</div>
+    <div style="font-size:11px; font-weight:600; margin-top:10px;">Open a time on another day</div>
     <div class="row" style="gap:6px; margin-top:6px;"><input id="bkExtraDate" type="date" style="flex:1.3; min-width:0;" /><input id="bkExtraTime" type="time" step="900" style="flex:1; min-width:0;" /><button class="btn-ghost tap" id="bkExtraBtn" style="font-size:11px; flex:none;">Open</button></div>
-    <button class="btn-primary tap" id="bkAddBtn" style="width:100%; margin-top:10px;">+ Add booking for a client (e.g. from DM)</button>
-    <div id="bkAddForm"></div>
+    </details>
   </div>
   <div class="card"><div class="eyebrow">Next 30 days</div><div class="title" style="font-size:15px;">Upcoming confirmed</div><div id="bkUpList" style="margin-top:8px;"></div></div>`);
 
@@ -2231,8 +2250,9 @@ function bookAddFormHtml(){
     <div style="font-size:11.5px; font-weight:600;">New booking with ${esc(artist.name||'')}</div>
     <select id="bkfClient"><option value="">Choose client…</option>${clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
     <div class="row" style="gap:6px;"><input id="bkfDate" type="date" value="${todayISO()}" style="flex:1.2;" /><input id="bkfTime" type="time" step="900" value="08:00" style="flex:1;" /></div>
-    <div style="font-size:10.5px; color:var(--muted);">Services (the duration is calculated automatically)</div>
-    <div style="display:flex; flex-wrap:wrap; gap:6px;">${svcs.map(s => `<label class="pill" style="font-size:10.5px; padding:5px 9px; display:flex; gap:5px; align-items:center;"><input type="checkbox" class="bkfSvc" value="${s.key}" style="width:auto;"> ${esc(s.en)} · ${s.min[tier]}m</label>`).join('')}</div>
+    <div style="font-size:10.5px; color:var(--muted);">Services · duration is added up automatically</div>
+    ${[['base','Treatment'],['removal','Removal'],['design','Design']].map(([g, gl]) => { const list = svcs.filter(s => (s.group||'base') === g); if (!list.length) return '';
+      return `<div><div style="font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:2px 0 4px;">${gl}</div><div style="display:grid; grid-template-columns:1fr 1fr; gap:5px;">${list.map(s => `<label style="font-size:10.5px; line-height:1.25; padding:6px 7px; border:1px solid var(--hairline); border-radius:10px; display:flex; gap:5px; align-items:flex-start;"><input type="checkbox" class="bkfSvc" value="${s.key}" style="width:auto; margin:1px 0 0;"><span>${esc(s.en)}<span style="color:var(--muted);"> · ${s.min[tier]}m</span></span></label>`).join('')}</div></div>`; }).join('')}
     <textarea id="bkfNote" placeholder="Note (optional)" style="min-height:40px;"></textarea>
     <button class="btn-primary tap" id="bkfSave">Save booking</button></div>`;
 }
@@ -2480,7 +2500,7 @@ document.addEventListener('click', async e => {
     return bkToggle(ad.dataset.bkadd, tt, true); }
   if (e.target.id === 'bkExtraBtn'){ const d = document.getElementById('bkExtraDate').value, t = document.getElementById('bkExtraTime').value; if (!d || !t) return alert('Choose a date and time first.');
     await bkToggle(d, t, true); document.getElementById('bkExtraTime').value = ''; return; }
-  if (e.target.id === 'bkAddBtn'){ if (!BOOK_CFG) await loadBookCfg(); document.getElementById('bkAddForm').innerHTML = bookAddFormHtml(); return; }
+  if (e.target.id === 'bkAddBtn'){ const box = document.getElementById('bkAddForm'); if (box.innerHTML){ box.innerHTML = ''; e.target.textContent = '+ Add booking for a client'; return; } if (!BOOK_CFG) await loadBookCfg(); box.innerHTML = bookAddFormHtml(); e.target.textContent = '× Close booking form'; return; }
   if (e.target.id === 'bkfSave'){
     const p = { p_client: document.getElementById('bkfClient').value || null, p_artist: document.getElementById('bkSchArtist').value, p_date: document.getElementById('bkfDate').value,
       p_time: document.getElementById('bkfTime').value, p_services: [...document.querySelectorAll('.bkfSvc:checked')].map(x => x.value), p_note: document.getElementById('bkfNote').value.trim() || null, p_force: false };
