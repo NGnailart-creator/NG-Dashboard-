@@ -784,6 +784,28 @@ async function openWelcome(c, user, code){
   paint();
 }
 
+// ---------- PICK A GIFT (owner) ----------
+window.loadGifts = async function(){
+  const card = document.getElementById('giftCard'); if (!card || currentUser.role !== 'Owner') return;
+  card.style.display = '';
+  const [{ data: items }, { data: picks }] = await Promise.all([sb.from('ngd_gift_items').select('*').order('sort'), sb.from('ngd_gift_picks').select('client_id, item_key, created_at').order('created_at', { ascending:false })]);
+  const total = (items||[]).reduce((a, x) => a + Math.max(0, x.stock - x.given), 0);
+  document.getElementById('giftList').innerHTML = (items||[]).map(x => { const left = Math.max(0, x.stock - x.given);
+    const who = (picks||[]).filter(p => p.item_key === x.key).map(p => (clients.find(c => c.id === p.client_id)||{}).name).filter(Boolean);
+    return `<div style="border-top:1px solid var(--hairline); padding:8px 0;"><div class="row" style="justify-content:space-between; align-items:center; gap:8px;">
+      <div style="flex:1; font-size:12.5px;"><b style="font-weight:600;">${esc(x.value_text||x.title_en)}</b><div style="font-size:10.5px; color:var(--muted);">valid ${x.valid_days} days after opening${who.length ? ' · ' + who.map(esc).join(', ') : ''}</div></div>
+      <span class="tag" style="${left ? '' : 'background:#F3E1DE; color:#8A2D1F;'}">${left ? left + ' of ' + x.stock + ' left' : 'gone'}</span>
+      <input type="number" min="0" max="99" value="${x.stock}" data-giftstock="${x.key}" title="Total available" style="width:54px; padding:5px 6px; font-size:12px;"></div></div>`; }).join('')
+    + `<div style="font-size:11px; margin-top:8px;">${total ? `<b>${total}</b> gifts left · ${(picks||[]).length} picked so far` : '<b>All gifts are gone</b> — the gift box is closed for clients.'}</div>`;
+};
+document.addEventListener('click', e => { if (e.target.id === 'giftRefresh') loadGifts(); });
+document.addEventListener('change', async e => {
+  const inp = e.target.closest('[data-giftstock]'); if (!inp) return;
+  const n = Math.max(0, Math.min(99, parseInt(inp.value || '0', 10)));
+  const { error } = await sb.from('ngd_gift_items').update({ stock: n }).eq('key', inp.dataset.giftstock);
+  if (error) alert(error.message); loadGifts();
+});
+
 // ---------- STORAGE USAGE (owner) ----------
 const STORE_LIMIT = { files: 1024**3, db: 500 * 1024**2 };
 const STORE_NAMES = { 'ngd-dp':'DP proofs', 'ngd-sets':"Today's Set photos", 'ngd-client-photos':'Client photos', 'ngd-team-photos':'Team photos', 'ngd-colors':'Color gallery', 'ngd-materials':'PDF library' };
@@ -1851,6 +1873,10 @@ document.addEventListener('click', async e => {
 if (isOwner || currentUser.role === 'Admin'){
   pages.insertAdjacentHTML('beforeend', `
   <div class="pagesec section-hidden" id="page-website">
+    <div class="card" id="giftCard" style="display:none;"><div class="row" style="justify-content:space-between; align-items:center;"><div class="eyebrow">Client website</div><button class="pill tap" id="giftRefresh" style="font-size:10px; padding:4px 9px;">↻</button></div>
+      <div class="title">🎁 Pick a gift</div>
+      <div style="font-size:11px; color:var(--muted); margin-top:4px;">Each client picks once. When a gift runs out it leaves the box, and you get a 🔔. When all are gone, the gift box closes.</div>
+      <div id="giftList" style="margin-top:8px;"></div></div>
     <div class="card">
       <div class="eyebrow">Client website</div><div class="title">WiFi & announcement</div>
       <div style="display:grid; gap:8px; margin-top:10px;">
@@ -2067,7 +2093,7 @@ if (currentUser.role === 'Owner'){
   const caLine = e => ({ open:'📱 opened the website', tab:`👀 looked at ${esc(CA_TAB[e.detail] || e.detail || 'a page')}`, booked:`📅 booked ${esc(e.detail||'')}`, dp_uploaded:'🧾 uploaded her DP proof',
     cancelled:`↩️ ${e.detail === 'reschedule' ? 'asked to reschedule' : 'cancelled'} a booking`, pin_set:'🔐 created her PIN (first login)', profile_saved:'✏️ updated her profile', photo:'🖼 added a profile photo',
     set_downloaded:"⬇️ downloaded her Today's Set", message:'💬 sent a message', love_note:'♡ wrote a love note', letter_opened:`✉️ opened the letter “${esc(e.detail||'')}”`, note_saved:'📝 saved her notes',
-    tick_requested:'✋ asked for a growth tick', feedback:'📮 sent feedback with her name — see Feedback', chat_reply:'💬 replied in chat', logout:'🚪 logged out' })[e.kind] || esc(e.kind);
+    tick_requested:'✋ asked for a growth tick', gift_opened:`🎁 opened her gift: ${esc(e.detail||'')}`, feedback:'📮 sent feedback with her name — see Feedback', chat_reply:'💬 replied in chat', logout:'🚪 logged out' })[e.kind] || esc(e.kind);
   function caRender(){
     const withLogin = CA_SUM.filter(c => c.has_login), opened = withLogin.filter(c => c.last_seen_at), notYet = withLogin.filter(c => !c.last_seen_at);
     const week = withLogin.filter(c => c.last_seen_at && Date.now() - new Date(c.last_seen_at) < 7 * 864e5).length;
@@ -2105,6 +2131,7 @@ document.getElementById('topnav').addEventListener('click', e => {
   if (b.dataset.key === 'feedback' && window.loadFeedback) loadFeedback();
   if (b.dataset.key === 'activity' && window.loadActivity) loadActivity();
   if (b.dataset.key === 'clientact' && window.loadClientActivity) loadClientActivity();
+  if (b.dataset.key === 'website' && window.loadGifts) loadGifts();
   if (b.dataset.key === 'treat') loadTreatments();
   if (b.dataset.key === 'knowledge') loadMaterials();
   if (b.dataset.key === 'admin' && window.loadStorage) loadStorage();
