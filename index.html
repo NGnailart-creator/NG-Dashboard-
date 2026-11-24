@@ -2219,7 +2219,7 @@ function drawBkMonth(){
         const t = sl.time.replace(':','.'), sep = si && arr[si-1].group !== sl.group ? '<span style="width:1px; background:var(--hairline); align-self:stretch; margin:0 2px;"></span>' : '';
         return sep + (() => {
         if (sl.booked) return `<span title="${esc(sl.booked.client||'')} ${sl.booked.start}–${sl.booked.end}" style="background:var(--text); color:var(--bg); border-radius:8px; padding:5px 7px; font-size:11.5px; text-decoration:line-through; line-height:1.1; text-align:center;">${t}<br><span style="font-size:8px; text-decoration:none; display:inline-block;">${esc((sl.booked.client||'booked').split(' ')[0])}</span></span>`;
-        return `<button class="tap" ${past ? 'disabled' : ''} data-bkslot="${sl.time}" data-date="${d.date}" data-open="${sl.open ? 1 : 0}" style="outline:${sl.pend ? '2px dashed #B0566A' : 'none'}; outline-offset:1px; border:1px solid ${sl.open ? 'var(--text)' : 'var(--hairline)'}; background:transparent; color:${sl.open ? 'var(--text)' : 'var(--muted)'}; border-radius:8px; padding:6px 8px; font-size:12px; font-weight:${sl.open ? 600 : 400}; text-decoration:${sl.open ? 'none' : 'line-through'}; cursor:pointer;">${t}${sl.default ? '' : '<sup style="font-size:7px;"> +</sup>'}</button>`; })(); }).join('')}</div>
+        return `<button class="tap" ${past ? 'disabled' : ''} data-bkslot="${sl.time}" data-date="${d.date}" data-open="${sl.open ? 1 : 0}" style="outline:${sl.pend ? '2px dashed #B0566A' : 'none'}; outline-offset:1px; border:1px solid ${sl.open ? 'var(--text)' : 'var(--hairline)'}; background:transparent; color:${sl.open ? 'var(--text)' : 'var(--muted)'}; border-radius:8px; padding:6px 8px; font-size:12px; font-weight:${sl.open ? 600 : 400}; text-decoration:${sl.open ? 'none' : 'line-through'}; cursor:pointer; line-height:1.15;">${t}${sl.default ? '' : '<sup style="font-size:7px;"> +</sup>'}${!sl.open && sl.label && !sl.pend ? `<div style="font-size:8.5px; font-weight:500; color:var(--text); text-decoration:none; display:inline-block; max-width:64px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(sl.label)}</div>` : ''}</button>`; })(); }).join('')}</div>
       ${past ? '' : `<span style="display:flex; flex-direction:column; align-items:center; gap:2px; flex:none;"><span class="tap" data-bkadd="${d.date}" title="Open another time" style="cursor:pointer; color:var(--muted); font-size:15px; line-height:1; padding:0 4px;">＋</span><span class="tap" data-bkcloseday="${d.date}" title="Close the whole day" style="cursor:pointer; color:var(--muted); font-size:14px; line-height:1; padding:0 4px;">⊘</span><span class="tap" data-bksess="${d.date}" title="Sessions for this day (e.g. 08/12)" style="cursor:pointer; color:${d.custom ? '#B0566A' : 'var(--muted)'}; font-size:13px; line-height:1; padding:0 4px;">⧉</span></span>`}${(d.cancelled||[]).length ? `<div style="flex-basis:100%; font-size:10px; color:#B0566A; padding-left:42px;">${d.cancelled.map(x => `↩ ${esc(x.client||'')} ${x.time} — ${x.kind === 'reschedule' ? 'cancelled to reschedule' : 'cancelled'} by ${x.by === 'team' ? 'team' : 'client'} · ${new Date(x.at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}`).join('<br>')}</div>` : ''}</div>`; }).join('') + '</div>'
     : '<div style="font-size:11.5px; color:var(--muted);">No booking days this month.</div>';
 }
@@ -2328,12 +2328,53 @@ async function bkBulk(from, to, open){
   if (!data) alert(open ? 'Nothing to reopen.' : 'Nothing to close — no open times.');
   renderBkMonth();
 }
-async function bkToggle(date, time, open){
+// Partner times in the same session (e.g. 08 & 09) that can be switched together
+function bkPartners(date, time, open){
+  const d = BK_MDATA.find(x => x.date === date); if (!d) return [];
+  const me = (d.slots||[]).find(x => x.time === time); if (!me || me.group == null || me.group < 0) return [];
+  return (d.slots||[]).filter(x => x.time !== time && x.group === me.group && !x.booked && x.open !== open);
+}
+function bkToggle(date, time, open){
   const who = bkArtistName(), when = `${dayLabel(date)} ${time.replace(':','.')}`;
-  if (!confirm(open ? `Open ${when} for ${who}?\nClients will be able to book this time.` : `Close ${when} for ${who}?\nClients can no longer book this time.`)) return;
-  const { error } = await sb.rpc('ngd_set_slot', { p_artist: document.getElementById('bkSchArtist').value, p_date: date, p_time: time, p_open: open });
-  if (error) return alert(error.message);
-  renderBkMonth();
+  const partners = bkPartners(date, time, open);
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed; inset:0; background:rgba(20,20,20,.45); z-index:9999; display:flex; align-items:flex-end; justify-content:center;';
+  const opt = (v, label, extra) => `<label class="row" style="gap:8px; align-items:center; padding:9px 10px; border:1px solid var(--hairline); border-radius:12px; font-size:12.5px;"><input type="radio" name="bkFor" value="${v}" style="width:auto;" ${v === 'ig' ? 'checked' : ''}> ${label}${extra||''}</label>`;
+  ov.innerHTML = `<div style="background:var(--bg,#FFF7EF); width:100%; max-width:480px; border-radius:22px 22px 0 0; padding:20px 18px 26px; box-shadow:0 -10px 40px rgba(0,0,0,.18);">
+    <div class="eyebrow">${open ? 'Open time' : 'Close time'}</div>
+    <div class="title" style="font-size:17px; margin-top:2px;">${esc(when)} · ${esc(who)}</div>
+    <div style="font-size:11.5px; color:var(--muted); margin:6px 0 12px;">${open ? 'Clients will be able to book this time.' : 'Clients can no longer book this time.'}</div>
+    ${open ? '' : `<div style="font-size:12px; font-weight:600; margin-bottom:6px;">Who is this for?</div>
+      <div style="display:grid; gap:6px;">
+        ${opt('ig', 'Instagram', ' <input id="bkForIg" placeholder="@username" style="flex:1; margin-left:auto; padding:6px 8px; font-size:12px;" autocapitalize="off">')}
+        ${opt('name', 'Name', ' <input id="bkForName" placeholder="Client name" style="flex:1; margin-left:auto; padding:6px 8px; font-size:12px;">')}
+        ${opt('none', 'No client — just closing')}
+      </div>`}
+    ${partners.length ? `<label class="row" style="gap:8px; align-items:flex-start; margin-top:12px; padding:10px; background:var(--tint); border-radius:12px; font-size:12px;"><input type="checkbox" id="bkAlsoPair" style="width:auto; margin-top:2px;" ${open ? '' : 'checked'}>
+      <span>Also ${open ? 'open' : 'close'} <b>${partners.map(p => p.time.replace(':','.')).join(' & ')}</b>?<br><span style="color:var(--muted); font-size:11px;">Same session as ${time.replace(':','.')}.</span></span></label>` : ''}
+    <div class="row" style="gap:8px; margin-top:16px;"><button class="btn-ghost tap" id="bkTgCancel" style="flex:1;">Cancel</button><button class="btn-primary tap" id="bkTgOk" style="flex:1;">${open ? 'Open' : 'Close'}</button></div></div>`;
+  document.body.appendChild(ov);
+  const close = () => ov.remove();
+  ov.addEventListener('click', e => { if (e.target === ov) close(); });
+  const pick = () => { const r = ov.querySelector('input[name="bkFor"]:checked'); return r ? r.value : 'none'; };
+  ['bkForIg','bkForName'].forEach(id => { const el = ov.querySelector('#' + id); if (el) el.addEventListener('focus', () => { ov.querySelector(`input[name="bkFor"][value="${id === 'bkForIg' ? 'ig' : 'name'}"]`).checked = true; }); });
+  ov.querySelector('#bkTgCancel').onclick = close;
+  ov.querySelector('#bkTgOk').onclick = async () => {
+    let label = null;
+    if (!open){
+      const k = pick();
+      if (k === 'ig'){ const v = ov.querySelector('#bkForIg').value.trim().replace(/^@+/, ''); if (!v) return alert('Type the Instagram username, or choose "No client".'); label = '@' + v; }
+      if (k === 'name'){ const v = ov.querySelector('#bkForName').value.trim(); if (!v) return alert('Type the client name, or choose "No client".'); label = v; }
+    }
+    const also = partners.length && ov.querySelector('#bkAlsoPair') && ov.querySelector('#bkAlsoPair').checked ? partners : [];
+    const btn = ov.querySelector('#bkTgOk'); btn.disabled = true; btn.textContent = 'Saving…';
+    const artist = document.getElementById('bkSchArtist').value;
+    const { error } = await sb.rpc('ngd_set_slot', { p_artist: artist, p_date: date, p_time: time, p_open: open, p_label: label });
+    if (error){ btn.disabled = false; btn.textContent = open ? 'Open' : 'Close'; return alert(error.message); }
+    for (const p of also){ const r = await sb.rpc('ngd_set_slot', { p_artist: artist, p_date: date, p_time: p.time, p_open: open, p_label: label }); if (r.error) alert(`${p.time}: ${r.error.message}`); }
+    close(); renderBkMonth();
+  };
+  setTimeout(() => { const f = ov.querySelector('#bkForIg'); if (f) f.focus(); }, 50);
 }
 document.addEventListener('click', async e => {
   const sl = e.target.closest('[data-bkslot]');
