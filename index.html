@@ -2438,11 +2438,42 @@ function openGcal(id){
 }
 async function bkBulk(from, to, open){
   const who = bkArtistName(), span = from === to ? dayLabel(from) : `all of ${MONTH_NAMES[BK_MONTH.m]} ${BK_MONTH.y} (from today)`;
+  if (!open && from === to) return blockReasonPanel(`${span} · ${who}`, 'All open times this day close. Times with a booking stay.', async label => {
+    const { data, error } = await sb.rpc('ngd_set_slots_bulk', { p_artist: document.getElementById('bkSchArtist').value, p_from: from, p_to: to, p_open: false, p_label: label });
+    if (error) return alert(error.message);
+    if (!data) alert('Nothing to close — no open times.');
+    renderBkMonth();
+  }, 'Close day');
   if (!confirm(open ? `Reopen the usual times for ${who} on ${span}?\nClients will be able to book them again.` : `Close ALL open times for ${who} on ${span}?\nClients can no longer book these times. Existing bookings stay.`)) return;
   const { data, error } = await sb.rpc('ngd_set_slots_bulk', { p_artist: document.getElementById('bkSchArtist').value, p_from: from, p_to: to, p_open: open });
   if (error) return alert(error.message);
   if (!data) alert(open ? 'Nothing to reopen.' : 'Nothing to close — no open times.');
   renderBkMonth();
+}
+const BLOCK_REASONS = ['💅 Press-on nails', '📚 Team training', '🌿 Personal / day off'];
+function blockReasonPanel(title, sub, onOk, okText){
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed; inset:0; background:rgba(20,20,20,.45); z-index:9999; display:flex; align-items:flex-end; justify-content:center;';
+  ov.innerHTML = `<div style="background:var(--bg,#FFF7EF); width:100%; max-width:480px; border-radius:22px 22px 0 0; padding:20px 18px 26px; box-shadow:0 -10px 40px rgba(0,0,0,.18);">
+    <div class="eyebrow">Close day</div><div class="title" style="font-size:17px; margin-top:2px;">${esc(title)}</div>
+    <div style="font-size:11.5px; color:var(--muted); margin:6px 0 12px;">${esc(sub)}</div>
+    <div style="font-size:12px; font-weight:600; margin-bottom:6px;">Why? (optional)</div>
+    <div class="row" style="gap:6px; flex-wrap:wrap;">${BLOCK_REASONS.map(r => `<button class="pill tap" data-reason="${esc(r)}" style="font-size:11.5px; padding:6px 10px;">${esc(r)}</button>`).join('')}</div>
+    <input id="brNote" placeholder="Note (optional)" style="width:100%; margin-top:8px; font-size:12px;">
+    <div class="row" style="gap:8px; margin-top:16px;"><button class="btn-ghost tap" data-x style="flex:1;">Cancel</button><button class="btn-primary tap" id="brOk" style="flex:1;">${okText}</button></div></div>`;
+  document.body.appendChild(ov);
+  let reason = '';
+  ov.addEventListener('click', async e => {
+    if (e.target === ov || e.target.closest('[data-x]')) return ov.remove();
+    const rb = e.target.closest('[data-reason]');
+    if (rb){ reason = reason === rb.dataset.reason ? '' : rb.dataset.reason; ov.querySelectorAll('[data-reason]').forEach(b => { const on = b.dataset.reason === reason; b.style.background = on ? 'var(--text)' : ''; b.style.color = on ? 'var(--bg)' : ''; }); return; }
+    if (e.target.id === 'brOk'){
+      const note = ov.querySelector('#brNote').value.trim();
+      const label = reason ? reason + (note ? ' · ' + note : '') : (note ? '📝 ' + note : null);
+      e.target.disabled = true; e.target.textContent = 'Saving…';
+      await onOk(label); ov.remove();
+    }
+  });
 }
 // Partner times in the same session (e.g. 08 & 09) that can be switched together
 function bkPartners(date, time, open){
@@ -2462,7 +2493,10 @@ function bkToggle(date, time, open){
     ${open ? '' : `<div style="font-size:12px; font-weight:600; margin-bottom:6px;">Who is this for?</div>
       <input id="bkForQ" placeholder="Type a name, @instagram or phone…" autocapitalize="off" autocomplete="off" style="width:100%;">
       <div id="bkForList" style="display:grid; gap:5px; margin-top:6px;"></div>
-      <div id="bkForSel" style="margin-top:6px;"></div>`}
+      <div id="bkForSel" style="margin-top:6px;"></div>
+      <div style="font-size:12px; font-weight:600; margin:12px 0 6px;">Or block it for</div>
+      <div class="row" style="gap:6px; flex-wrap:wrap;">${BLOCK_REASONS.map(r => `<button class="pill tap" data-forreason="${esc(r)}" style="font-size:11.5px; padding:6px 10px;">${esc(r)}</button>`).join('')}</div>
+      <input id="bkNoteX" placeholder="Note (optional) — e.g. 20 sets for @shop, Fida's cat-eye practice" style="width:100%; margin-top:8px; font-size:12px;">`}
     ${partners.length ? `<label class="row" style="gap:8px; align-items:flex-start; margin-top:12px; padding:10px; background:var(--tint); border-radius:12px; font-size:12px;"><input type="checkbox" id="bkAlsoPair" style="width:auto; margin-top:2px;" ${!open || partners.every(p => p.label === 'Same session as ' + time.replace(':','.')) ? 'checked' : ''}>
       <span>Also ${open ? 'open' : 'close'} <b>${partners.map(p => p.time.replace(':','.')).join(' & ')}</b>?<br><span style="color:var(--muted); font-size:11px;">Same session as ${time.replace(':','.')}.</span></span></label>` : ''}
     <div class="row" style="gap:8px; margin-top:16px;"><button class="btn-ghost tap" id="bkTgCancel" style="flex:1;">Cancel</button><button class="btn-primary tap" id="bkTgOk" style="flex:1;">${open ? 'Open' : 'Close'}</button></div></div>`;
@@ -2490,6 +2524,7 @@ function bkToggle(date, time, open){
       + (t ? row('data-fornew="1"', `<span style="width:28px; text-align:center; font-size:16px;">＋</span><span><b style="font-weight:600;">Save as new client</b><br><span style="font-size:10.5px; color:var(--muted);">Quick contact: name, Instagram, WhatsApp</span></span>`, false) : '')
       + `<div id="bkNewBox"></div>`
       + row('data-fornone="1"', `<span style="width:28px; text-align:center;">⊘</span><span>No client — just closing</span>`, eff === 'none');
+    ov.querySelectorAll('[data-forreason]').forEach(b => { const on = SEL.type === 'note' && SEL.label === b.dataset.forreason; b.style.background = on ? 'var(--text)' : ''; b.style.color = on ? 'var(--bg)' : ''; });
     sel.innerHTML = eff === 'none' ? '' : `<div style="font-size:11.5px;">Closing for: <b>${esc(eff === 'text' && SEL.type === 'none' ? q.value.trim() : SEL.label)}</b>${SEL.type === 'client' ? ' <span style="color:var(--muted);">· linked to client card</span>' : ''}</div>`;
   };
   if (!open){
@@ -2521,6 +2556,8 @@ function bkToggle(date, time, open){
         };
         return;
       }
+      const rb = e.target.closest('[data-forreason]');
+      if (rb){ SEL = SEL.type === 'note' && SEL.label === rb.dataset.forreason ? { type:'none' } : { type:'note', label: rb.dataset.forreason }; q.value = ''; drawFor(); return; }
       const b = e.target.closest('[data-forclient],[data-forfree],[data-fornone]'); if (!b) return;
       if (b.dataset.forclient){ const c = clients.find(x => x.id === b.dataset.forclient); SEL = { type:'client', id:c.id, label: clientLabel(c) }; q.value = clientLabel(c); }
       else if (b.dataset.forfree){ SEL = { type:'text', label: q.value.trim() }; }
@@ -2537,6 +2574,8 @@ function bkToggle(date, time, open){
       if (SEL.type === 'none' && q && q.value.trim()) SEL = { type:'text', label: q.value.trim() };
       if (SEL.type !== 'none') label = SEL.label;
       if (SEL.type === 'client') clientId = SEL.id;
+      const note = (ov.querySelector('#bkNoteX') || {}).value ? ov.querySelector('#bkNoteX').value.trim() : '';
+      if (note) label = label ? label + ' · ' + note : '📝 ' + note;
     }
     const also = partners.length && ov.querySelector('#bkAlsoPair') && ov.querySelector('#bkAlsoPair').checked ? partners : [];
     const btn = ov.querySelector('#bkTgOk'); btn.disabled = true; btn.textContent = 'Saving…';
@@ -2544,7 +2583,7 @@ function bkToggle(date, time, open){
     const { error } = await sb.rpc('ngd_set_slot', { p_artist: artist, p_date: date, p_time: time, p_open: open, p_label: label, p_client: clientId });
     if (error){ btn.disabled = false; btn.textContent = open ? 'Open' : 'Close'; return alert(error.message); }
     // the other time(s) in the same session only point to the time you tapped — the client stays on that one
-    const pLabel = !open && label ? `Same session as ${time.replace(':','.')}` : null;
+    const pLabel = !open && label ? (SEL.type === 'note' || (SEL.type === 'none' && label) ? label : `Same session as ${time.replace(':','.')}`) : null;
     for (const p of also){ const r = await sb.rpc('ngd_set_slot', { p_artist: artist, p_date: date, p_time: p.time, p_open: open, p_label: pLabel, p_client: null }); if (r.error) alert(`${p.time}: ${r.error.message}`); }
     close(); renderBkMonth();
   };
