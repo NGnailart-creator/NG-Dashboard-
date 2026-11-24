@@ -2339,13 +2339,13 @@ function bkToggle(date, time, open){
   const partners = bkPartners(date, time, open);
   const ov = document.createElement('div');
   ov.style.cssText = 'position:fixed; inset:0; background:rgba(20,20,20,.45); z-index:9999; display:flex; align-items:flex-end; justify-content:center;';
-  ov.innerHTML = `<div style="background:var(--bg,#FFF7EF); width:100%; max-width:480px; border-radius:22px 22px 0 0; padding:20px 18px 26px; box-shadow:0 -10px 40px rgba(0,0,0,.18);">
+  ov.innerHTML = `<div style="background:var(--bg,#FFF7EF); width:100%; max-width:480px; max-height:92vh; overflow-y:auto; -webkit-overflow-scrolling:touch; border-radius:22px 22px 0 0; padding:20px 18px 26px; box-shadow:0 -10px 40px rgba(0,0,0,.18);">
     <div class="eyebrow">${open ? 'Open time' : 'Close time'}</div>
     <div class="title" style="font-size:17px; margin-top:2px;">${esc(when)} · ${esc(who)}</div>
     <div style="font-size:11.5px; color:var(--muted); margin:6px 0 12px;">${open ? 'Clients will be able to book this time.' : 'Clients can no longer book this time.'}</div>
     ${open ? '' : `<div style="font-size:12px; font-weight:600; margin-bottom:6px;">Who is this for?</div>
       <input id="bkForQ" placeholder="Type a name, @instagram or phone…" autocapitalize="off" autocomplete="off" style="width:100%;">
-      <div id="bkForList" style="display:grid; gap:5px; margin-top:6px; max-height:210px; overflow:auto;"></div>
+      <div id="bkForList" style="display:grid; gap:5px; margin-top:6px;"></div>
       <div id="bkForSel" style="margin-top:6px;"></div>`}
     ${partners.length ? `<label class="row" style="gap:8px; align-items:flex-start; margin-top:12px; padding:10px; background:var(--tint); border-radius:12px; font-size:12px;"><input type="checkbox" id="bkAlsoPair" style="width:auto; margin-top:2px;" ${open ? '' : 'checked'}>
       <span>Also ${open ? 'open' : 'close'} <b>${partners.map(p => p.time.replace(':','.')).join(' & ')}</b>?<br><span style="color:var(--muted); font-size:11px;">Same session as ${time.replace(':','.')}.</span></span></label>` : ''}
@@ -2371,6 +2371,8 @@ function bkToggle(date, time, open){
     const av = c => `<span style="width:28px; height:28px; border-radius:50%; overflow:hidden; background:var(--tint); display:inline-flex; align-items:center; justify-content:center; font-size:11px; flex:none;">${c.photo && CLIENT_PHOTO_URLS[c.photo] ? `<img src="${CLIENT_PHOTO_URLS[c.photo]}" style="width:100%; height:100%; object-fit:cover;">` : esc((c.name||'?').slice(0,1).toUpperCase())}</span>`;
     list.innerHTML = hits.map(c => row(`data-forclient="${c.id}"`, `${av(c)}<span><b style="font-weight:600;">${esc(c.name)}</b><br><span style="font-size:10.5px; color:var(--muted);">${[c.instagram ? '@' + esc(String(c.instagram).replace(/^@+/, '')) : '', esc(c.phone||''), (c.visits||0) + ' visits'].filter(Boolean).join(' · ')}</span></span>`, SEL.type === 'client' && SEL.id === c.id)).join('')
       + (t ? row('data-forfree="1"', `<span style="width:28px; text-align:center;">✎</span><span>Use “${esc(q.value.trim())}”<br><span style="font-size:10.5px; color:var(--muted);">${hits.length ? 'Someone else, not a saved client' : 'Not a saved client — that’s fine'}</span></span>`, eff === 'text') : '')
+      + (t ? row('data-fornew="1"', `<span style="width:28px; text-align:center; font-size:16px;">＋</span><span><b style="font-weight:600;">Save as new client</b><br><span style="font-size:10.5px; color:var(--muted);">Quick contact: name, Instagram, WhatsApp</span></span>`, false) : '')
+      + `<div id="bkNewBox"></div>`
       + row('data-fornone="1"', `<span style="width:28px; text-align:center;">⊘</span><span>No client — just closing</span>`, eff === 'none');
     sel.innerHTML = eff === 'none' ? '' : `<div style="font-size:11.5px;">Closing for: <b>${esc(eff === 'text' && SEL.type === 'none' ? q.value.trim() : SEL.label)}</b>${SEL.type === 'client' ? ' <span style="color:var(--muted);">· linked to client card</span>' : ''}</div>`;
   };
@@ -2378,6 +2380,31 @@ function bkToggle(date, time, open){
     const q = ov.querySelector('#bkForQ');
     q.addEventListener('input', () => { SEL = { type:'none' }; drawFor(); });
     ov.addEventListener('click', e => {
+      if (e.target.closest('[data-fornew]')){
+        const v = q.value.trim(), isIg = /^@/.test(v) || (/^[a-z0-9._]+$/i.test(v) && /[._0-9]/.test(v));
+        const box = ov.querySelector('#bkNewBox');
+        box.innerHTML = `<div style="display:grid; gap:6px; padding:10px; border:1px solid var(--text); border-radius:12px;">
+          <div style="font-size:11.5px; font-weight:600;">New client · quick contact</div>
+          <input id="bkNewName" placeholder="Name *" value="${isIg ? '' : esc(v)}">
+          <input id="bkNewIg" placeholder="Instagram (without @)" autocapitalize="off" value="${isIg ? esc(v.replace(/^@+/, '')) : ''}">
+          <input id="bkNewWa" placeholder="WhatsApp (optional)" inputmode="tel">
+          <div style="font-size:10.5px; color:var(--muted);">Saved to Clients with ${esc(who)} as main nail artist. You can complete the details later.</div>
+          <button class="btn-primary tap" id="bkNewSave" style="padding:9px;">Save client &amp; use</button></div>`;
+        (isIg ? box.querySelector('#bkNewName') : box.querySelector('#bkNewIg')).focus();
+        box.querySelector('#bkNewSave').onclick = async () => {
+          const name = box.querySelector('#bkNewName').value.trim(), ig = box.querySelector('#bkNewIg').value.trim().replace(/^@+/, ''), wa = box.querySelector('#bkNewWa').value.trim();
+          if (!name) return alert('Name is required.');
+          const dup = clients.find(c => (ig && norm(c.instagram) === ig.toLowerCase()) || (wa && digits(c.phone) && digits(c.phone) === digits(wa)));
+          if (dup && !confirm(`${dup.name} already has this ${ig && norm(dup.instagram) === ig.toLowerCase() ? 'Instagram' : 'WhatsApp'}. Save a new client anyway?`)) return;
+          const btn = box.querySelector('#bkNewSave'); btn.disabled = true; btn.textContent = 'Saving…';
+          const payload = { name, instagram: ig || null, phone: wa || null, artist: who, visits: 0, birthday: '', rating: 5, note: '', shared_note: '', last_visit: '', pref: [], created_by: currentUser.id };
+          const { data, error } = await sb.from('ngd_clients').insert(payload).select().single();
+          if (error){ btn.disabled = false; btn.textContent = 'Save client & use'; return alert('Could not save client: ' + error.message); }
+          const c = mapClientRow(data); clients.push(c);
+          SEL = { type:'client', id:c.id, label: clientLabel(c) }; q.value = clientLabel(c); drawFor();
+        };
+        return;
+      }
       const b = e.target.closest('[data-forclient],[data-forfree],[data-fornone]'); if (!b) return;
       if (b.dataset.forclient){ const c = clients.find(x => x.id === b.dataset.forclient); SEL = { type:'client', id:c.id, label: clientLabel(c) }; q.value = clientLabel(c); }
       else if (b.dataset.forfree){ SEL = { type:'text', label: q.value.trim() }; }
