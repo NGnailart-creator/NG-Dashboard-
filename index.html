@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
 <title>NG Nail Art Dashboard</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Abhaya+Libre:wght@400;500;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Abhaya+Libre:wght@400;500;600&family=Pinyon+Script&display=swap');
   * { box-sizing: border-box; }
   html,body{height:100%;margin:0;}
   ::-webkit-scrollbar{display:none;}
@@ -726,28 +726,29 @@ const WELCOME_QR = ["111111100010110011111001001111111", "1000001000001111010010
 async function drawWelcome(name, user, code, opt){
   opt = opt || {bg:'#FFF7EF', tile:false};
   const cv = document.createElement('canvas'); cv.width = 1080; cv.height = 1350; const g = cv.getContext('2d');
-  const FF = '"Abhaya Libre", Georgia, serif';
-  try { await document.fonts.load('80px "Abhaya Libre"'); await document.fonts.load('500 40px "Abhaya Libre"'); } catch(_) {}
+  const FF = '"Abhaya Libre", Georgia, serif', SC = '"Pinyon Script", "Abhaya Libre", Georgia, serif';
+  try { await document.fonts.load('80px "Abhaya Libre"'); await document.fonts.load('500 40px "Abhaya Libre"'); await document.fonts.load('120px "Pinyon Script"'); } catch(_) {}
   const logo = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = WELCOME_LOGO; });
   const INK = '#141414', MUT = '#8a827b', BEIGE = '#FFF7EF';
   g.fillStyle = opt.bg; g.fillRect(0, 0, 1080, 1350);
   g.textAlign = 'center'; g.textBaseline = 'alphabetic';
   if (logo){ const lw = 120, lh = lw * logo.height / logo.width; g.drawImage(logo, 540 - lw / 2, 80, lw, lh); }
-  g.fillStyle = INK; g.font = `84px ${FF}`; let hs = 84; g.font = `${hs}px ${FF}`; while (g.measureText(`you're in, ${name}.`).width > 900 && hs > 52){ hs -= 4; g.font = `${hs}px ${FF}`; }
-  g.fillText(`you're in, ${name}.`, 540, 330);
-  g.fillStyle = MUT; g.font = `34px ${FF}`; g.fillText('your NG Nailart page is ready.', 540, 382);
+  g.fillStyle = MUT; g.font = `32px ${FF}`; g.fillText("you're in,", 540, 300);
+  let ns = 150; g.font = `${ns}px ${SC}`; while (g.measureText(name).width > 820 && ns > 80){ ns -= 6; g.font = `${ns}px ${SC}`; }
+  g.fillStyle = INK; g.fillText(name, 540, 430);
+  g.fillStyle = MUT; g.font = `32px ${FF}`; g.fillText('your NG Nailart page is ready.', 540, 490);
   // soft beige block holding the QR, like a product on a plain backdrop
-  const bx = 90, by = 440, bw = 900, bh = 520;
-    const n = WELCOME_QR.length, size = 330, m = size / n, qx = 540 - size / 2, qy = by + 72;
+  const bx = 90, by = 520, bw = 900, bh = 440;
+    const n = WELCOME_QR.length, size = 300, m = size / n, qx = 540 - size / 2, qy = by + 50;
   if (opt.tile){ g.fillStyle = '#FFFFFF'; g.beginPath(); g.roundRect ? g.roundRect(qx - 26, qy - 26, size + 52, size + 52, 22) : g.rect(qx - 26, qy - 26, size + 52, size + 52); g.fill(); }
   g.fillStyle = INK; WELCOME_QR.forEach((row, y) => { for (let x = 0; x < n; x++) if (row[x] === '1') g.fillRect(Math.floor(qx + x * m), Math.floor(qy + y * m), Math.ceil(m), Math.ceil(m)); });
   g.fillStyle = MUT; g.font = `28px ${FF}`; g.fillText('scan to open', 540, by + bh - 40);
   // username + code, side by side
-  const cy = 1075;
+  const cy = 1050;
   g.fillStyle = MUT; g.font = `28px ${FF}`; g.fillText('username', 330, cy); g.fillText('one-time code', 750, cy);
   g.fillStyle = INK; g.font = `52px ${FF}`; g.fillText(user, 330, cy + 66);
   g.font = `500 56px ${FF}`; if ('letterSpacing' in g) g.letterSpacing = '6px'; g.fillText(String(code), 753, cy + 66); if ('letterSpacing' in g) g.letterSpacing = '0px';
-  g.fillStyle = MUT; g.font = `30px ${FF}`; g.fillText('log in, then choose your own PIN.', 540, 1262);
+  g.fillStyle = MUT; g.font = `30px ${FF}`; g.fillText('log in, then choose your own PIN.', 540, 1240);
   return cv;
 }
 async function openWelcome(c, user, code){
