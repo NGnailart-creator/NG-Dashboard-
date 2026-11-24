@@ -162,7 +162,7 @@ const TABS = [
   {key:'website', label:'Website', icon:'🌐', roles:['Owner','Admin']},
   {key:'messages', label:'Messages', icon:'💌', roles:['Owner']},
   {key:'feedback', label:'Feedback', icon:'📮', roles:['Owner']},
-  {key:'activity', label:'Activity', icon:'🕘', roles:['Owner']},
+  {key:'activity', label:'Activity', icon:'🕘', roles:['Owner','Admin','Senior artist','Junior artist']},
   {key:'pricing', label:'Pricing', icon:'💰', roles:['Owner','Admin']},
   {key:'admin', label:'Admin', icon:'🛡️', roles:['Owner']}
 ];
@@ -1992,12 +1992,12 @@ if (isOwner){
   };
 }
 
-// ---------- ACTIVITY (owner) ----------
-if (isOwner){
+// ---------- ACTIVITY (everyone; each person sees what concerns them) ----------
+{
   pages.insertAdjacentHTML('beforeend', `
   <div class="pagesec section-hidden" id="page-activity">
     <div class="card"><div class="eyebrow">Who changed what</div><div class="title">Activity log</div>
-      <div style="font-size:11px; color:var(--muted); margin-top:6px;">Every change by the team (and clients' own notes) is recorded automatically. Latest 150.</div></div>
+      <div style="font-size:11px; color:var(--muted); margin-top:6px;">${isOwner ? 'Every change by the team (and clients\' own notes) is recorded automatically. Latest 150.' : currentUser.role === 'Admin' ? 'Changes to schedules, bookings, treatments and clients. Latest 150.' : 'Changes to your schedule, your bookings and your treatments. Latest 150.'}</div></div>
     <div class="card" id="actList"></div>
   </div>`);
   const tableLabel = {ngd_clients:'client', ngd_treatments:'treatment', ngd_coupons:'coupon', ngd_pricing:'price', ngd_bookings:'booking', ngd_messages:'message', ngd_colors:'color', ngd_site:'website', ngd_staff:'team', ngd_vouchers:'voucher', ngd_kb_items:'knowledge', ngd_guidance:'guidance', ngd_materials:'material PDF'};
@@ -2030,7 +2030,7 @@ if (isOwner){
     return `✎ ${who} edited the treatment for ${ctx}${ch.join('')}`;
   };
   window.loadActivity = async function(){
-    const { data } = await sb.from('ngd_activity').select('*').order('created_at',{ascending:false}).limit(150);
+    const { data } = await sb.rpc('ngd_team_activity', { p_limit: 150 });
     ACTIVITY = (data || []).filter(r => !(r.table_name === 'ngd_treatments' && r.action === 'UPDATE' && !treatLine(r)));
     document.getElementById('actList').innerHTML = ACTIVITY.map(r => `<div style="border-top:1px solid var(--hairline); padding:7px 0;">
       <div style="font-size:12px;">${r.table_name === 'ngd_treatments' ? treatLine(r) : r.table_name === 'ngd_schedule' ? `${({CLOSE:'🚫',OPEN:'✅',BOOK:'📅',APPROVE:'✔️',REJECT:'✖️',CANCEL:'↩️',PROOF:'🧾'})[r.action]||'📅'} <b style="font-weight:600;">${esc(r.actor_name)}</b> ${esc(r.summary)}` : `<b style="font-weight:600;">${esc(r.actor_name)}</b> ${verb[r.action]||r.action} ${tableLabel[r.table_name]||r.table_name} <b style="font-weight:500;">${esc(nameOfRow(r))}</b>`}</div>
