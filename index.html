@@ -163,6 +163,7 @@ const TABS = [
   {key:'messages', label:'Messages', icon:'💌', roles:['Owner']},
   {key:'feedback', label:'Feedback', icon:'📮', roles:['Owner']},
   {key:'activity', label:'Activity', icon:'🕘', roles:['Owner','Admin','Senior artist','Junior artist']},
+  {key:'clientact', label:'Client activity', icon:'📲', roles:['Owner']},
   {key:'pricing', label:'Pricing', icon:'💰', roles:['Owner','Admin']},
   {key:'admin', label:'Admin', icon:'🛡️', roles:['Owner']}
 ];
@@ -2045,12 +2046,64 @@ if (isOwner){
   };
 }
 
+// ---------- CLIENT ACTIVITY (owner only) ----------
+if (currentUser.role === 'Owner'){
+  pages.insertAdjacentHTML('beforeend', `
+  <div class="pagesec section-hidden" id="page-clientact">
+    <div class="card"><div class="eyebrow">Only you can see this</div><div class="title">Client activity</div>
+      <div style="font-size:11px; color:var(--muted); margin-top:6px;">What clients do on the website: opening it, bookings, DP proofs, letters, downloads and more. Anonymous feedback is never tracked.</div>
+      <div id="caStats" style="margin-top:10px;"></div></div>
+    <div class="card"><div class="row" style="justify-content:space-between; align-items:center;"><div class="eyebrow">Clients</div><button class="pill tap" id="caRefresh" style="font-size:10px; padding:4px 9px;">↻ Refresh</button></div>
+      <input id="caSearch" placeholder="Search client…" style="width:100%; margin-top:8px;">
+      <div id="caClients" style="margin-top:6px;"></div></div>
+    <div class="card"><div class="row" style="justify-content:space-between; align-items:center;"><div class="eyebrow" id="caFeedTitle">Latest activity</div>
+      <label class="row" style="gap:5px; font-size:10.5px; color:var(--muted); align-items:center;"><input type="checkbox" id="caTabs" style="width:auto;"> page views</label></div>
+      <div id="caFeed" style="margin-top:6px;"></div></div>
+  </div>`);
+  let CA_SUM = [], CA_FEED = [], CA_CLIENT = null;
+  const CA_TAB = { card:'Loyalty card', profile:'Profile', book:'Booking', sets:"Today's Set", chat:'Chat', letters:'Letters', coupons:'Coupons', history:'History', notes:'My notes', feedback:'Feedback' };
+  const caAgo = t => { if (!t) return 'never'; const m = Math.round((Date.now() - new Date(t)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
+  const caLine = e => ({ open:'📱 opened the website', tab:`👀 looked at ${esc(CA_TAB[e.detail] || e.detail || 'a page')}`, booked:`📅 booked ${esc(e.detail||'')}`, dp_uploaded:'🧾 uploaded her DP proof',
+    cancelled:`↩️ ${e.detail === 'reschedule' ? 'asked to reschedule' : 'cancelled'} a booking`, pin_set:'🔐 created her PIN (first login)', profile_saved:'✏️ updated her profile', photo:'🖼 added a profile photo',
+    set_downloaded:"⬇️ downloaded her Today's Set", message:'💬 sent a message', love_note:'♡ wrote a love note', letter_opened:`✉️ opened the letter “${esc(e.detail||'')}”`, note_saved:'📝 saved her notes',
+    tick_requested:'✋ asked for a growth tick', chat_reply:'💬 replied in chat', logout:'🚪 logged out' })[e.kind] || esc(e.kind);
+  function caRender(){
+    const withLogin = CA_SUM.filter(c => c.has_login), opened = withLogin.filter(c => c.last_seen_at), notYet = withLogin.filter(c => !c.last_seen_at);
+    const week = withLogin.filter(c => c.last_seen_at && Date.now() - new Date(c.last_seen_at) < 7 * 864e5).length;
+    document.getElementById('caStats').innerHTML = `<div class="row" style="gap:6px;">${[[opened.length + ' / ' + withLogin.length, 'have opened it'], [week, 'active this week'], [notYet.length, 'not opened yet']].map(([n, l]) => `<div style="flex:1; text-align:center; padding:9px 4px; border:1px solid var(--hairline); border-radius:12px;"><div style="font-size:17px; font-weight:600;">${n}</div><div style="font-size:10px; color:var(--muted);">${l}</div></div>`).join('')}</div>`
+      + (notYet.length ? `<div style="font-size:10.5px; color:var(--muted); margin-top:8px;">Not opened yet: ${notYet.map(c => esc(c.name)).join(', ')}</div>` : '');
+    const q = (document.getElementById('caSearch').value || '').toLowerCase();
+    const list = CA_SUM.filter(c => c.has_login && (!q || c.name.toLowerCase().includes(q)));
+    document.getElementById('caClients').innerHTML = list.map(c => `<button class="tap" data-caclient="${c.client_id}" style="display:flex; width:100%; justify-content:space-between; align-items:center; text-align:left; padding:8px 4px; border:0; border-top:1px solid var(--hairline); background:${CA_CLIENT === c.client_id ? 'var(--tint)' : 'transparent'}; font-size:12.5px; font-family:inherit; color:var(--text);">
+      <span><b style="font-weight:600;">${esc(c.name)}</b>${c.must_set_pin ? ' <span style="font-size:10px; color:var(--muted);">· PIN not set yet</span>' : ''}</span>
+      <span style="font-size:10.5px; color:var(--muted); text-align:right;">${c.last_seen_at ? 'seen ' + caAgo(c.last_seen_at) : 'not opened yet'}${c.opens_30d ? `<br>${c.opens_30d}× in 30 days` : ''}</span></button>`).join('') || '<div style="font-size:12px; color:var(--muted);">No clients with a login.</div>';
+    const showTabs = document.getElementById('caTabs').checked;
+    const feed = CA_FEED.filter(e => showTabs || e.kind !== 'tab');
+    const cn = CA_CLIENT && (CA_SUM.find(c => c.client_id === CA_CLIENT) || {}).name;
+    document.getElementById('caFeedTitle').innerHTML = cn ? `${esc(cn)} · <span class="tap" id="caAll" style="text-decoration:underline; cursor:pointer;">show all</span>` : 'Latest activity';
+    document.getElementById('caFeed').innerHTML = feed.map(e => `<div style="border-top:1px solid var(--hairline); padding:7px 0; font-size:12px;">${CA_CLIENT ? '' : `<b style="font-weight:600;">${esc(e.client_name)}</b> `}${caLine(e)}
+      <div style="font-size:10px; color:var(--muted);">${new Date(e.created_at).toLocaleString('id-ID')} · ${caAgo(e.created_at)}</div></div>`).join('') || '<div style="font-size:12px; color:var(--muted);">Nothing yet.</div>';
+  }
+  window.loadClientActivity = async function(){
+    const [a, b] = await Promise.all([sb.rpc('ngd_owner_client_summary'), sb.rpc('ngd_owner_client_activity', { p_limit: 300, p_client: CA_CLIENT })]);
+    CA_SUM = a.data || []; CA_FEED = b.data || []; caRender();
+  };
+  document.addEventListener('click', e => {
+    if (e.target.id === 'caRefresh') return loadClientActivity();
+    if (e.target.id === 'caAll'){ CA_CLIENT = null; return loadClientActivity(); }
+    const cb = e.target.closest('[data-caclient]'); if (cb){ CA_CLIENT = CA_CLIENT === cb.dataset.caclient ? null : cb.dataset.caclient; loadClientActivity(); }
+  });
+  document.addEventListener('input', e => { if (e.target.id === 'caSearch') caRender(); });
+  document.addEventListener('change', e => { if (e.target.id === 'caTabs') caRender(); });
+}
+
 // refresh owner pages when opened
 document.getElementById('topnav').addEventListener('click', e => {
   const b = e.target.closest('.navbtn'); if (!b) return;
   if (b.dataset.key === 'messages' && window.loadMessages) loadMessages();
   if (b.dataset.key === 'feedback' && window.loadFeedback) loadFeedback();
   if (b.dataset.key === 'activity' && window.loadActivity) loadActivity();
+  if (b.dataset.key === 'clientact' && window.loadClientActivity) loadClientActivity();
   if (b.dataset.key === 'treat') loadTreatments();
   if (b.dataset.key === 'knowledge') loadMaterials();
   if (b.dataset.key === 'admin' && window.loadStorage) loadStorage();
