@@ -1729,10 +1729,12 @@ function openTreatmentForm(clientId, editT){
       const pf = window._tfPrefill; window._tfPrefill = null;
       const norm = x => String(x||'').toLowerCase().replace(/★fav/g,'').replace(/\(.*?\)/g,'').replace(/[–—-]/g,' ').replace(/\s+/g,' ').trim();
       rows.innerHTML = '';
-      pf.forEach(sv => { addRow(); const r = rows.lastElementChild, n = norm(sv.en);
-        const hit = sheet.find(x => norm(x.label) === n) || sheet.find(x => { const l = norm(x.label); return l && (l.startsWith(n) || n.startsWith(l)); });
-        r.querySelector('.tfLabel').value = hit ? hit.label : (sv.en || '');
-        if (hit) r.querySelector('.tfUnit').value = parsePrice(hit.price); });
+      const ALIAS = { gel_h:'basic nail gel', gel_f:'basic nail gel' };
+      pf.forEach(sv => { addRow(); const r = rows.lastElementChild, n = ALIAS[sv.key] || norm(sv.en);
+        const hit = sv.group === 'design' ? null : (sheet.find(x => norm(x.label) === n) || sheet.find(x => { const l = norm(x.label); return l && (l.startsWith(n) || n.startsWith(l)); }));
+        r.querySelector('.tfLabel').value = hit ? hit.label : '';
+        if (!hit) r.querySelector('.tfLabel').placeholder = (sv.group === 'design' ? 'Pilih desain: ' : 'Pilih item: ') + (sv.id || sv.en || '');
+        if (hit){ r.querySelector('.tfUnit').value = parsePrice(hit.price); if (/\/(finger|nail)/i.test(hit.price)) r.querySelector('.tfQty').value = 10; } });
       const tip = document.getElementById('tfLoyalty');
       if (tip) tip.insertAdjacentHTML('afterend', '<div style="font-size:10.5px; background:var(--tint); border-radius:10px; padding:7px 9px;">✨ Item diisi otomatis dari booking. Cek jumlah dan harga desainnya, lalu simpan.</div>');
       recalc();
