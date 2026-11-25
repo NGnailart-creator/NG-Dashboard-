@@ -2665,6 +2665,17 @@ function drawBkMonthNow(){
       ${past ? '' : `<span style="display:flex; flex-direction:column; align-items:center; gap:2px; flex:none;"><span class="tap" data-bkadd="${d.date}" title="Open another time" style="cursor:pointer; color:var(--muted); font-size:15px; line-height:1; padding:0 4px;">＋</span><span class="tap" data-bkcloseday="${d.date}" title="Close the whole day" style="cursor:pointer; color:var(--muted); font-size:14px; line-height:1; padding:0 4px;">⊘</span><span class="tap" data-bksess="${d.date}" title="Sessions for this day (e.g. 08/12)" style="cursor:pointer; color:${d.custom ? '#B0566A' : 'var(--muted)'}; font-size:13px; line-height:1; padding:0 4px;">⧉</span></span>`}${(d.cancelled||[]).length ? `<div style="flex-basis:100%; font-size:10px; color:#B0566A; padding-left:42px;">${d.cancelled.map(x => `↩ ${esc(x.client||'')} ${x.time} — ${x.kind === 'reschedule' ? 'cancelled to reschedule' : 'cancelled'} by ${x.by === 'team' ? 'team' : 'client'} · ${new Date(x.at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}`).join('<br>')}</div>` : ''}</div>`; }).join('') + '</div>'
     : '<div style="font-size:11.5px; color:var(--muted);">No booking days this month.</div>';
 }
+async function openBookingForm(pre){
+  const box = document.getElementById('bkAddForm'), btn = document.getElementById('bkAddBtn');
+  BK_FORM_Y = window.scrollY; window._bkFromSlot = !!pre;
+  if (!BOOK_CFG) await loadBookCfg();
+  box.innerHTML = bookAddFormHtml(); if (btn) btn.textContent = '× Close booking form';
+  if (pre){
+    if (pre.client) document.getElementById('bkfClient').value = pre.client;
+    document.getElementById('bkfDate').value = pre.date; document.getElementById('bkfTime').value = pre.time;
+    box.scrollIntoView({ behavior:'smooth', block:'start' });
+  }
+}
 function bookAddFormHtml(){
   const artist = people.find(p => p.id === document.getElementById('bkSchArtist').value) || {};
   const tier = artist.role === 'Owner' ? 'owner' : artist.role === 'Senior artist' ? 'senior' : 'junior';
@@ -2827,6 +2838,8 @@ function bkToggle(date, time, open){
   ov.innerHTML = `<div style="background:var(--bg,#FFF7EF); width:100%; max-width:480px; max-height:92vh; overflow-y:auto; -webkit-overflow-scrolling:touch; border-radius:22px 22px 0 0; padding:20px 18px 26px; box-shadow:0 -10px 40px rgba(0,0,0,.18);">
     <div class="eyebrow">${open ? 'Closed time' : 'Close time'}</div>
     <div class="title" style="font-size:17px; margin-top:2px;">${esc(when)} · ${esc(who)}</div>
+    ${open && !/^Same session as /.test(curNote) ? `<button class="btn-primary tap" id="bkToBooking" style="width:100%; margin-top:12px;">📋 Add booking details</button>
+      <div style="font-size:10.5px; color:var(--muted); margin-top:4px; text-align:center;">Services, duration &amp; DP for ${curSlot.client_id ? esc((clients.find(c => c.id === curSlot.client_id) || {}).name || 'this client') : 'this time'} — it becomes a full booking (black).</div>` : ''}
     ${open ? `<div style="font-size:12px; font-weight:600; margin:10px 0 6px;">Note</div>
       <div class="row" style="gap:6px; flex-wrap:wrap;">${BLOCK_REASONS.map(r => `<button class="pill tap" data-notereason="${esc(r)}" style="font-size:11.5px; padding:6px 10px;">${esc(r)}</button>`).join('')}</div>
       <input id="bkEditNote" value="${esc(curNote)}" placeholder="Write a note — e.g. press-on order, training, client name" style="width:100%; margin-top:8px; font-size:12.5px;">
@@ -2847,6 +2860,7 @@ function bkToggle(date, time, open){
   document.body.appendChild(ov);
   const close = () => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); ov.remove(); window.scrollTo(0, openY); bkToAnchor(); };
   ov.addEventListener('click', e => { if (e.target === ov) close(); });
+  { const tb = ov.querySelector('#bkToBooking'); if (tb) tb.onclick = () => { close(); openBookingForm({ client: curSlot.client_id || '', date, time }); }; }
   // who-is-it-for: search saved clients by name, Instagram or phone
   let SEL = { type:'none' };
   const norm = v => String(v||'').toLowerCase().replace(/^@+/, '').trim(), digits = v => String(v||'').replace(/\D/g, '');
@@ -2988,7 +3002,7 @@ document.addEventListener('click', async e => {
     return bkToggle(ad.dataset.bkadd, tt, true); }
   if (e.target.id === 'bkExtraBtn'){ const d = document.getElementById('bkExtraDate').value, t = document.getElementById('bkExtraTime').value; if (!d || !t) return alert('Choose a date and time first.');
     await bkToggle(d, t, true); document.getElementById('bkExtraTime').value = ''; return; }
-  if (e.target.id === 'bkAddBtn'){ BK_FORM_Y = window.scrollY; const box = document.getElementById('bkAddForm'); if (box.innerHTML){ box.innerHTML = ''; e.target.textContent = '+ Add booking for a client'; return; } if (!BOOK_CFG) await loadBookCfg(); box.innerHTML = bookAddFormHtml(); e.target.textContent = '× Close booking form'; return; }
+  if (e.target.id === 'bkAddBtn'){ const box = document.getElementById('bkAddForm'); if (box.innerHTML){ box.innerHTML = ''; window._bkFromSlot = false; e.target.textContent = '+ Add booking for a client'; return; } return openBookingForm(null); }
   if (e.target.id === 'bkfSave'){
     const p = { p_client: document.getElementById('bkfClient').value || null, p_artist: document.getElementById('bkSchArtist').value, p_date: document.getElementById('bkfDate').value,
       p_time: document.getElementById('bkfTime').value, p_services: [...document.querySelectorAll('.bkfSvc:checked')].map(x => x.value), p_note: document.getElementById('bkfNote').value.trim() || null, p_force: false };
@@ -2998,12 +3012,12 @@ document.addEventListener('click', async e => {
     let r = await sb.rpc('ngd_team_book', p);
     if (r.error && /CONFLICT:/.test(r.error.message)){
       const why = r.error.message.split('CONFLICT:')[1];
-      if (!confirm(why === 'too_long' ? 'This treatment runs into the next booking. Save anyway?' : why === 'taken' ? 'This time is already booked. Save anyway (double booking)?' : 'This time is closed for web booking. Save anyway?')) return;
+      if (!(why === 'closed' && window._bkFromSlot) && !confirm(why === 'too_long' ? 'This treatment runs into the next booking. Save anyway?' : why === 'taken' ? 'This time is already booked. Save anyway (double booking)?' : 'This time is closed for web booking. Save anyway?')) return;
       r = await sb.rpc('ngd_team_book', { ...p, p_force: true });
     }
     if (r.error) return alert('Could not save: ' + r.error.message);
     if (r.data){ const m = await sb.rpc('ngd_set_dp', { p_id: r.data, p_status: dpSel }); if (m.error) alert('Booking saved, but the DP status could not be saved: ' + m.error.message); }
-    document.getElementById('bkAddForm').innerHTML = ''; { const b = document.getElementById('bkAddBtn'); if (b) b.textContent = '+ Add booking for a client'; } if (BK_FORM_Y != null) window.scrollTo(0, BK_FORM_Y); renderBkMonth(); loadAppts(); reloadCal(); alert('Booking saved. It now shows in the schedule, the calendar and (if the client has an account) on their website.'); return;
+    document.getElementById('bkAddForm').innerHTML = ''; window._bkFromSlot = false; { const b = document.getElementById('bkAddBtn'); if (b) b.textContent = '+ Add booking for a client'; } if (BK_FORM_Y != null) window.scrollTo(0, BK_FORM_Y); renderBkMonth(); loadAppts(); reloadCal(); alert('Booking saved. It now shows in the schedule, the calendar and (if the client has an account) on their website.'); return;
   }
   const ok = e.target.closest('[data-bkok]');
   if (ok){ const ap = APPTS.find(x => x.id === ok.dataset.bkok) || {};
