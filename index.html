@@ -3181,7 +3181,7 @@ document.addEventListener('click', async e => {
 });
 renderTeam();
 
-// ---- home: treatments still to log (today + yesterday)
+// ---- home: treatments still to finish (price details + photos) — today = reminder, H+1 or later = late
 var HOME_LOG_BUSY = false;
 async function loadHomeLog(){
   const card = document.getElementById('homeLogCard'); if (!card || HOME_LOG_BUSY) return;
@@ -3189,33 +3189,56 @@ async function loadHomeLog(){
   try {
     const idl = currentLang === 'id';
     const t = todayISO();
-    const y = new Date(Date.now() - new Date().getTimezoneOffset()*60000 - 864e5).toISOString().slice(0,10);
+    const dayISO = n => new Date(Date.now() - new Date().getTimezoneOffset()*60000 - n*864e5).toISOString().slice(0,10);
+    const from = dayISO(14);
     const nowMin = new Date().getHours()*60 + new Date().getMinutes();
     const all = isOwnerOrAdmin;
-    let qa = sb.from('ngd_appointments').select('client_id,client_name,artist_id,artist_name,appt_date,start_min,summary').eq('status','confirmed').gte('appt_date', y).lte('appt_date', t);
-    let qo = sb.from('ngd_schedule_overrides').select('client_id,artist_id,odate,omin,label').eq('is_open', false).not('client_id','is',null).gte('odate', y).lte('odate', t);
-    const qt = sb.from('ngd_treatments').select('client_id,treatment_date').neq('status','cancelled').gte('treatment_date', y).lte('treatment_date', t);
+    let qa = sb.from('ngd_appointments').select('client_id,client_name,artist_id,artist_name,appt_date,start_min,summary').eq('status','confirmed').gte('appt_date', from).lte('appt_date', t);
+    let qo = sb.from('ngd_schedule_overrides').select('client_id,artist_id,odate,omin,label').eq('is_open', false).not('client_id','is',null).gte('odate', from).lte('odate', t);
+    const qt = sb.from('ngd_treatments').select('id,client_id,treatment_date').neq('status','cancelled').gte('treatment_date', from).lte('treatment_date', t);
     if (!all){ qa = qa.eq('artist_id', currentUser.id); qo = qo.eq('artist_id', currentUser.id); }
     const [ra, ro, rt] = await Promise.all([qa, qo, qt]);
-    const logged = new Set((rt.data||[]).map(x => x.client_id + '|' + x.treatment_date));
+    const trByKey = new Map((rt.data||[]).map(x => [x.client_id + '|' + x.treatment_date, x.id]));
+    const trIds = [...trByKey.values()];
+    const sent = new Set();
+    if (trIds.length){ const rs = await sb.from('ngd_sets').select('treatment_id').in('treatment_id', trIds).not('sent_at','is',null); (rs.data||[]).forEach(x => sent.add(x.treatment_id)); }
     const seen = new Set(), items = [];
     for (const a of ra.data||[]){ if (!a.client_id) continue; const k = a.client_id + '|' + a.appt_date; if (seen.has(k)) continue; seen.add(k);
       items.push({cid:a.client_id, name:a.client_name || ((clients.find(c => c.id === a.client_id)||{}).name) || 'Client', artist:a.artist_name || ((people.find(p => p.id === a.artist_id)||{}).name) || '', date:a.appt_date, start:a.start_min||0, what:a.summary||''}); }
     for (const o of ro.data||[]){ const k = o.client_id + '|' + o.odate; if (seen.has(k)) continue; seen.add(k);
       items.push({cid:o.client_id, name:((clients.find(c => c.id === o.client_id)||{}).name) || o.label || 'Client', artist:((people.find(p => p.id === o.artist_id)||{}).name) || '', date:o.odate, start:o.omin||0, what:''}); }
-    const todo = items.filter(i => !logged.has(i.cid + '|' + i.date) && (i.date < t || i.start <= nowMin))
+    const todo = items.map(i => { const tr = trByKey.get(i.cid + '|' + i.date); return { ...i, tr, need: !tr ? 'log' : (sent.has(tr) ? '' : 'photo') }; })
+      .filter(i => i.need && (i.date < t || i.start <= nowMin))
       .sort((a,b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.start - b.start));
     if (!todo.length){ card.style.display = 'none'; return; }
     card.style.display = '';
-    document.getElementById('homeLogTitle').textContent = idl ? `${todo.length} treatment belum di-log` : `${todo.length} treatment${todo.length === 1 ? '' : 's'} not logged yet`;
-    document.getElementById('homeLogHint').textContent = idl ? 'Log treatment hari ini atau besok, lalu kirim foto ke klien.' : 'Log it today or tomorrow, then send the photos to the client.';
-    document.getElementById('homeLogList').innerHTML = todo.map(i => `<div style="border-top:1px solid var(--hairline); padding:9px 0;">
-      <div class="row" style="justify-content:space-between;"><b style="font-weight:600; font-size:12.5px;">${esc(i.name)}</b><span class="tag">${i.date === t ? (idl ? 'Hari ini' : 'Today') : (idl ? 'Kemarin' : 'Yesterday')} · ${minToHM(i.start)}</span></div>
-      <div style="font-size:11px; color:var(--muted); margin-top:2px;">${all && i.artist ? esc(i.artist) + (i.what ? ' · ' : '') : ''}${esc(i.what)}</div>
-      <button class="btn-primary tap" data-homelog="${i.cid}|${i.date}|${esc(i.artist)}" style="width:100%; margin-top:7px; font-size:11.5px; padding:9px;">${idl ? '+ Log treatment & kirim foto' : '+ Log treatment & send photos'}</button>
-    </div>`).join('');
+    const lateN = todo.filter(i => i.date < t).length;
+    card.style.borderColor = lateN ? '#B0566A' : 'var(--hairline)';
+    const daysLate = d => Math.round((new Date(t + 'T00:00:00') - new Date(d + 'T00:00:00')) / 864e5);
+    const fmtD = d => new Date(d + 'T00:00:00').toLocaleDateString(idl ? 'id-ID' : 'en-GB', { weekday:'short', day:'numeric', month:'short' });
+    document.getElementById('homeLogTitle').textContent = lateN
+      ? (idl ? `Kamu terlambat · ${lateN} klien` : `You are late · ${lateN} client${lateN === 1 ? '' : 's'}`)
+      : (idl ? `${todo.length} treatment belum diposting` : `${todo.length} treatment${todo.length === 1 ? '' : 's'} not posted yet`);
+    document.getElementById('homeLogHint').textContent = lateN
+      ? (idl ? 'Klien sudah menunggu rincian harga dan foto nail art-nya. Mohon selesaikan sekarang, sebelum mengerjakan hal lain.' : 'Your clients are waiting for their price details and nail art photos. Please finish these now, before anything else.')
+      : (idl ? 'Masukkan rincian harga dan kirim foto ke klien hari ini ya.' : 'Please add the price details and send the photos to your client today.');
+    document.getElementById('homeLogList').innerHTML = todo.map(i => {
+      const late = i.date < t, n = daysLate(i.date);
+      const missing = i.need === 'log' ? (idl ? 'Rincian harga & foto belum diisi' : 'Price details & photos missing') : (idl ? 'Harga sudah diisi · foto belum dikirim ke klien' : 'Price done · photos not sent to the client yet');
+      const tag = late ? `<span class="tag" style="background:#B0566A; color:#fff;">${idl ? 'Terlambat' : 'Late'} · H+${n}</span>` : `<span class="tag">${idl ? 'Hari ini' : 'Today'} · ${minToHM(i.start)}</span>`;
+      const msg = late
+        ? `<div style="font-size:11.5px; color:#B0566A; font-weight:600; margin-top:5px; line-height:1.4;">${idl ? `Kamu sudah terlambat ${n} hari. Treatment ini seharusnya diposting pada hari ${fmtD(i.date)}. Mohon dikerjakan sekarang.` : `You are late by ${n} day${n === 1 ? '' : 's'}. This should have been posted on ${fmtD(i.date)}. Please complete it now.`}</div>`
+        : `<div style="font-size:11px; color:var(--muted); margin-top:4px;">${idl ? 'Kamu belum posting — selesaikan hari ini ya.' : "You haven't posted this yet — please finish it today."}</div>`;
+      const btn = i.need === 'log'
+        ? `<button class="btn-primary tap" data-homelog="${i.cid}|${i.date}|${esc(i.artist)}" style="width:100%; margin-top:7px; font-size:11.5px; padding:9px;">${idl ? (late ? 'Kerjakan sekarang · log harga & foto' : '+ Log harga & kirim foto') : (late ? 'Do it now · log price & photos' : '+ Log price & send photos')}</button>`
+        : `<button class="btn-primary tap" data-homeset="${i.tr}" style="width:100%; margin-top:7px; font-size:11.5px; padding:9px;">${idl ? (late ? 'Kirim foto sekarang' : 'Kirim foto ke klien') : (late ? 'Send photos now' : 'Send photos to client')}</button>`;
+      return `<div style="border-top:1px solid var(--hairline); padding:9px 0;">
+      <div class="row" style="justify-content:space-between;"><b style="font-weight:600; font-size:12.5px;">${esc(i.name)}</b>${tag}</div>
+      <div style="font-size:11px; color:var(--muted); margin-top:2px;">${all && i.artist ? esc(i.artist) + ' · ' : ''}${esc(missing)}${late ? ` · ${fmtD(i.date)}` : ''}</div>
+      ${msg}${btn}</div>`; }).join('');
   } finally { HOME_LOG_BUSY = false; }
 }
+document.addEventListener('click', e => { const b = e.target.closest('[data-homeset]'); if (b) openSetEditor(b.dataset.homeset); });
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-homelog]'); if (!b) return;
   const [cid, date, artist] = b.dataset.homelog.split('|');
