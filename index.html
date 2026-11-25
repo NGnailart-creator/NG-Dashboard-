@@ -3217,18 +3217,18 @@ async function loadHomeLog(){
     const daysLate = d => Math.round((new Date(t + 'T00:00:00') - new Date(d + 'T00:00:00')) / 864e5);
     const fmtD = d => new Date(d + 'T00:00:00').toLocaleDateString(idl ? 'id-ID' : 'en-GB', { weekday:'short', day:'numeric', month:'short' });
     document.getElementById('homeLogTitle').textContent = lateN
-      ? (idl ? `Kamu terlambat · ${lateN} klien` : `You are late · ${lateN} client${lateN === 1 ? '' : 's'}`)
-      : (idl ? `${todo.length} treatment belum diposting` : `${todo.length} treatment${todo.length === 1 ? '' : 's'} not posted yet`);
+      ? (idl ? `😢 Kamu terlambat · ${lateN} klien` : `😢 You are late · ${lateN} client${lateN === 1 ? '' : 's'}`)
+      : (idl ? `⏳ ${todo.length} treatment belum diposting` : `⏳ ${todo.length} treatment${todo.length === 1 ? '' : 's'} not posted yet`);
     document.getElementById('homeLogHint').textContent = lateN
-      ? (idl ? 'Klien sudah menunggu rincian harga dan foto nail art-nya. Mohon selesaikan sekarang, sebelum mengerjakan hal lain.' : 'Your clients are waiting for their price details and nail art photos. Please finish these now, before anything else.')
-      : (idl ? 'Masukkan rincian harga dan kirim foto ke klien hari ini ya.' : 'Please add the price details and send the photos to your client today.');
+      ? (idl ? 'Klien sudah menunggu rincian harga dan foto nail art-nya 🥺 Mohon selesaikan sekarang, sebelum mengerjakan hal lain.' : 'Your clients are waiting for their price details and nail art photos 🥺 Please finish these now, before anything else.')
+      : (idl ? 'Masukkan rincian harga dan kirim foto ke klien hari ini ya 💅' : 'Add the price details and send the photos to your client today 💅');
     document.getElementById('homeLogList').innerHTML = todo.map(i => {
       const late = i.date < t, n = daysLate(i.date);
       const missing = i.need === 'log' ? (idl ? 'Rincian harga & foto belum diisi' : 'Price details & photos missing') : (idl ? 'Harga sudah diisi · foto belum dikirim ke klien' : 'Price done · photos not sent to the client yet');
       const tag = late ? `<span class="tag" style="background:#B0566A; color:#fff;">${idl ? 'Terlambat' : 'Late'} · H+${n}</span>` : `<span class="tag">${idl ? 'Hari ini' : 'Today'} · ${minToHM(i.start)}</span>`;
       const msg = late
-        ? `<div style="font-size:11.5px; color:#B0566A; font-weight:600; margin-top:5px; line-height:1.4;">${idl ? `Kamu sudah terlambat ${n} hari. Treatment ini seharusnya diposting pada hari ${fmtD(i.date)}. Mohon dikerjakan sekarang.` : `You are late by ${n} day${n === 1 ? '' : 's'}. This should have been posted on ${fmtD(i.date)}. Please complete it now.`}</div>`
-        : `<div style="font-size:11px; color:var(--muted); margin-top:4px;">${idl ? 'Kamu belum posting — selesaikan hari ini ya.' : "You haven't posted this yet — please finish it today."}</div>`;
+        ? `<div style="font-size:11.5px; color:#B0566A; font-weight:600; margin-top:5px; line-height:1.4;">${idl ? `😢 Kamu sudah terlambat ${n} hari. Treatment ini seharusnya diposting pada hari ${fmtD(i.date)}. Kliennya masih menunggu — mohon dikerjakan sekarang.` : `😢 You are late by ${n} day${n === 1 ? '' : 's'}. This should have been posted on ${fmtD(i.date)}. Your client is still waiting — please complete it now.`}</div>`
+        : `<div style="font-size:11px; color:var(--muted); margin-top:4px;">${idl ? '✨ Kliennya lagi nungguin nih! Yuk posting sekarang, biar dia bisa post ke Instagram-nya atau share ke teman-temannya 💅📸' : "✨ Your client is waiting! Post it now so she can share it on her Instagram or with her friends 💅📸"}</div>`;
       const btn = i.need === 'log'
         ? `<button class="btn-primary tap" data-homelog="${i.cid}|${i.date}|${esc(i.artist)}" style="width:100%; margin-top:7px; font-size:11.5px; padding:9px;">${idl ? (late ? 'Kerjakan sekarang · log harga & foto' : '+ Log harga & kirim foto') : (late ? 'Do it now · log price & photos' : '+ Log price & send photos')}</button>`
         : `<button class="btn-primary tap" data-homeset="${i.tr}" style="width:100%; margin-top:7px; font-size:11.5px; padding:9px;">${idl ? (late ? 'Kirim foto sekarang' : 'Kirim foto ke klien') : (late ? 'Send photos now' : 'Send photos to client')}</button>`;
