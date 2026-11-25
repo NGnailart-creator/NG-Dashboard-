@@ -1725,6 +1725,18 @@ function openTreatmentForm(clientId, editT){
       document.getElementById('tfLoyalty').innerHTML = (c && c.sensitivity ? `<div style="background:#FBE9E7; color:#8A2D1F; border-radius:10px; padding:8px 10px; margin-bottom:6px;"><b>⚠️ Allergy / sensitivity:</b> ${esc(c.sensitivity)}</div>` : '') + (c && c.clientAllergy ? `<div style="background:#FBE9E7; color:#8A2D1F; border-radius:10px; padding:8px 10px; margin-bottom:6px;"><b>⚠️ Client says:</b> ${esc(c.clientAllergy)}</div>` : '') + `This will be visit <b>${nextVisit}</b> (stamp ${cycle} of 10).` + rewardPicker(c, nextVisit, cycle, bday);
     }
     window._tfSheet = sheet;
+    if (window._tfPrefill && !window._tfEdit && window._tfType !== 'press_on'){
+      const pf = window._tfPrefill; window._tfPrefill = null;
+      const norm = x => String(x||'').toLowerCase().replace(/★fav/g,'').replace(/\(.*?\)/g,'').replace(/[–—-]/g,' ').replace(/\s+/g,' ').trim();
+      rows.innerHTML = '';
+      pf.forEach(sv => { addRow(); const r = rows.lastElementChild, n = norm(sv.en);
+        const hit = sheet.find(x => norm(x.label) === n) || sheet.find(x => { const l = norm(x.label); return l && (l.startsWith(n) || n.startsWith(l)); });
+        r.querySelector('.tfLabel').value = hit ? hit.label : (sv.en || '');
+        if (hit) r.querySelector('.tfUnit').value = parsePrice(hit.price); });
+      const tip = document.getElementById('tfLoyalty');
+      if (tip) tip.insertAdjacentHTML('afterend', '<div style="font-size:10.5px; background:var(--tint); border-radius:10px; padding:7px 9px;">✨ Item diisi otomatis dari booking. Cek jumlah dan harga desainnya, lalu simpan.</div>');
+      recalc();
+    }
     if (window._tfType === 'press_on'){ window._tfReward = null; const c = cid && clients.find(x => x.id === cid);
       document.getElementById('tfLoyalty').innerHTML = c && c.sensitivity ? `<div style="background:#FBE9E7; color:#8A2D1F; border-radius:10px; padding:8px 10px;"><b>⚠️ Allergy / sensitivity:</b> ${esc(c.sensitivity)}</div>` : ''; }
     if (window._tfApplyReward) window._tfApplyReward();
@@ -2471,6 +2483,7 @@ function openSetEditor(tid){
       ov.remove();
       alert(`Sent to ${client.name} ♡\nIt shows on their page as a notification. Photos stay until ${new Date(snd.data).toLocaleString('id-ID')}.${client.hasLogin ? '' : '\n\nNote: this client has no website login yet — create one so they can see it.'}`);
       await loadSets(); await loadTreatments();
+      if (window._fromHome){ window._fromHome = false; showPage('home'); window.scrollTo(0, 0); loadHomeLog(); }
     } catch(err){
       if (draftId){ const pre = `sets/${draftId}/`; await sb.storage.from(SET_BUCKET).remove([1,2,3].flatMap(n => [pre+n+'.webp', pre+n+'.jpg'])); await sb.from('ngd_sets').delete().eq('id', draftId); }
       btn.disabled = false; btn.textContent = 'Send to ' + client.name; alert('Could not send: ' + err.message);
@@ -3057,7 +3070,7 @@ document.getElementById('bellBtn').onclick = async () => {
     <div class="row" style="justify-content:space-between;"><div class="eyebrow">Notifications</div><span class="tap" data-close style="cursor:pointer; font-size:18px;">✕</span></div>
     ${NOTIFS.length ? NOTIFS.map(x => `<div style="border-top:1px solid var(--hairline); padding:9px 0; ${x.read_at ? 'opacity:.6;' : ''}">
       <div style="font-size:12.5px; font-weight:${x.read_at ? 400 : 600};">${esc(x.title)}</div>
-      ${x.body ? `<div style="font-size:11px; color:var(--muted); margin-top:2px;">${esc(x.body)}</div>` : ''}
+      ${x.body ? `<div style="font-size:11px; color:var(--muted); margin-top:2px; white-space:pre-line;">${esc(x.body)}</div>` : ''}
       <div style="font-size:10px; color:var(--muted); margin-top:2px;">${new Date(x.created_at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div></div>`).join('') : '<div style="font-size:12px; color:var(--muted); padding:10px 0;">No notifications yet.</div>'}
     ${NOTIFS.some(x => /^booking/.test(x.kind)) ? `<button class="btn-primary tap" data-gobook style="width:100%; margin-top:10px;">Open booking requests</button>` : ''}</div>`;
   document.body.appendChild(ov);
@@ -3194,7 +3207,7 @@ async function loadHomeLog(){
     const from = dayISO(14);
     const nowMin = new Date().getHours()*60 + new Date().getMinutes();
     const all = isOwnerOrAdmin;
-    let qa = sb.from('ngd_appointments').select('client_id,client_name,artist_id,artist_name,appt_date,start_min,summary').eq('status','confirmed').gte('appt_date', from).lte('appt_date', t);
+    let qa = sb.from('ngd_appointments').select('client_id,client_name,artist_id,artist_name,appt_date,start_min,summary,services').eq('status','confirmed').gte('appt_date', from).lte('appt_date', t);
     let qo = sb.from('ngd_schedule_overrides').select('client_id,artist_id,odate,omin,label').eq('is_open', false).not('client_id','is',null).gte('odate', from).lte('odate', t);
     const qt = sb.from('ngd_treatments').select('id,client_id,treatment_date').neq('status','cancelled').gte('treatment_date', from).lte('treatment_date', t);
     if (!all){ qa = qa.eq('artist_id', currentUser.id); qo = qo.eq('artist_id', currentUser.id); }
@@ -3205,12 +3218,13 @@ async function loadHomeLog(){
     if (trIds.length){ const rs = await sb.from('ngd_sets').select('treatment_id').in('treatment_id', trIds).not('sent_at','is',null); (rs.data||[]).forEach(x => sent.add(x.treatment_id)); }
     const seen = new Set(), items = [];
     for (const a of ra.data||[]){ if (!a.client_id) continue; const k = a.client_id + '|' + a.appt_date; if (seen.has(k)) continue; seen.add(k);
-      items.push({cid:a.client_id, name:a.client_name || ((clients.find(c => c.id === a.client_id)||{}).name) || 'Client', artist:a.artist_name || ((people.find(p => p.id === a.artist_id)||{}).name) || '', date:a.appt_date, start:a.start_min||0, what:a.summary||''}); }
+      items.push({cid:a.client_id, name:a.client_name || ((clients.find(c => c.id === a.client_id)||{}).name) || 'Client', artist:a.artist_name || ((people.find(p => p.id === a.artist_id)||{}).name) || '', date:a.appt_date, start:a.start_min||0, what:a.summary||'', svc:a.services||null}); }
     for (const o of ro.data||[]){ const k = o.client_id + '|' + o.odate; if (seen.has(k)) continue; seen.add(k);
       items.push({cid:o.client_id, name:((clients.find(c => c.id === o.client_id)||{}).name) || o.label || 'Client', artist:((people.find(p => p.id === o.artist_id)||{}).name) || '', date:o.odate, start:o.omin||0, what:''}); }
     const todo = items.map(i => { const tr = trByKey.get(i.cid + '|' + i.date); return { ...i, tr, need: !tr ? 'log' : (sent.has(tr) ? '' : 'photo') }; })
       .filter(i => i.need && (i.date < t || i.start <= nowMin))
       .sort((a,b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.start - b.start));
+    window.HOME_TODO = todo;
     if (!todo.length){ card.style.display = 'none'; return; }
     card.style.display = '';
     const lateN = todo.filter(i => i.date < t).length;
@@ -3231,7 +3245,7 @@ async function loadHomeLog(){
         ? `<div style="font-size:11.5px; color:#B0566A; font-weight:600; margin-top:5px; line-height:1.4;">${idl ? `😢 Kamu sudah terlambat ${n} hari. Treatment ini seharusnya diposting pada hari ${fmtD(i.date)}. Kliennya masih menunggu — mohon dikerjakan sekarang.` : `😢 You are late by ${n} day${n === 1 ? '' : 's'}. This should have been posted on ${fmtD(i.date)}. Your client is still waiting — please complete it now.`}</div>`
         : `<div style="font-size:11px; color:var(--muted); margin-top:4px;">${idl ? '✨ Kliennya lagi nungguin nih! Yuk posting sekarang, biar dia bisa post ke Instagram-nya atau share ke teman-temannya 👉🏻👈🏻🥰' : "✨ Your client is waiting! Post it now so she can share it on her Instagram or with her friends 👉🏻👈🏻🥰"}</div>`;
       const btn = i.need === 'log'
-        ? `<button class="btn-primary tap" data-homelog="${i.cid}|${i.date}|${esc(i.artist)}" style="width:100%; margin-top:7px; font-size:11.5px; padding:9px;">${idl ? (late ? 'Kerjakan sekarang · log harga & foto' : '+ Log harga & kirim foto') : (late ? 'Do it now · log price & photos' : '+ Log price & send photos')}</button>`
+        ? `<button class="btn-primary tap" data-homelog="${i.cid}|${i.date}|${esc(i.artist)}" data-hidx="${todo.indexOf(i)}" style="width:100%; margin-top:7px; font-size:11.5px; padding:9px;">${idl ? (late ? 'Kerjakan sekarang · log harga & foto' : '+ Log harga & kirim foto') : (late ? 'Do it now · log price & photos' : '+ Log price & send photos')}</button>`
         : `<button class="btn-primary tap" data-homeset="${i.tr}" style="width:100%; margin-top:7px; font-size:11.5px; padding:9px;">${idl ? (late ? 'Kirim foto sekarang' : 'Kirim foto ke klien') : (late ? 'Send photos now' : 'Send photos to client')}</button>`;
       return `<div style="border-top:1px solid var(--hairline); padding:9px 0;">
       <div class="row" style="justify-content:space-between;"><b style="font-weight:600; font-size:12.5px;">${esc(i.name)}</b>${tag}</div>
@@ -3239,10 +3253,13 @@ async function loadHomeLog(){
       ${msg}${btn}</div>`; }).join('');
   } finally { HOME_LOG_BUSY = false; }
 }
-document.addEventListener('click', e => { const b = e.target.closest('[data-homeset]'); if (b) openSetEditor(b.dataset.homeset); });
+document.addEventListener('click', e => { const b = e.target.closest('[data-homeset]'); if (b){ window._fromHome = true; openSetEditor(b.dataset.homeset); } });
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-homelog]'); if (!b) return;
   const [cid, date, artist] = b.dataset.homelog.split('|');
+  const it = (window.HOME_TODO || [])[+b.dataset.hidx];
+  window._tfPrefill = it && Array.isArray(it.svc) && it.svc.length ? it.svc : null;
+  window._fromHome = true;
   openTreatmentForm(cid);
   const d = document.getElementById('tfDate'); if (d) d.value = date;
   const a = document.getElementById('tfArtist');
