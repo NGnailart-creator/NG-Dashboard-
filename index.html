@@ -200,6 +200,12 @@ pages.insertAdjacentHTML('beforeend', `
     <div id="homeTodayList" style="margin-top:10px;"></div>
     <button class="tap" id="homeMoney" style="display:none; width:100%; margin-top:10px; padding:10px 12px; border:1px solid var(--hairline); border-radius:12px; background:#FFF7EF; text-align:left; font-family:inherit; cursor:pointer;"></button>
   </div>
+  <div class="card" id="homeLogCard" style="display:none; border:1.5px solid #B0566A;">
+    <div class="eyebrow" style="color:#B0566A;">Treatment log</div>
+    <div class="title" style="font-size:14px;" id="homeLogTitle">Not logged yet</div>
+    <div style="font-size:10.5px; color:var(--muted); margin-top:3px;" id="homeLogHint"></div>
+    <div id="homeLogList" style="margin-top:6px;"></div>
+  </div>
   <div class="card">
     <div class="row" style="justify-content:space-between;">
       <div class="eyebrow" data-i18n="announcements">Announcements</div>
@@ -1623,6 +1629,7 @@ async function reloadClients(){
 
 function openTreatmentForm(clientId, editT){
   showPage('treat');
+  window._tfAfterSave = null;
   window._tfEdit = editT || null;
   const box = document.getElementById('treatForm');
   const defaultArtist = currentUser.role === 'Admin' ? (artists()[0]||{}).name : currentUser.name;
@@ -1826,6 +1833,12 @@ function openTreatmentForm(clientId, editT){
     }
     box.innerHTML = '';
     await loadTreatments();
+    loadHomeLog();
+    if (window._tfAfterSave === 'photos' && data && data.order_type !== 'press_on'){
+      window._tfAfterSave = null;
+      if (typeof loadSets === 'function') await loadSets();
+      openSetEditor(data.id);
+    }
   };
 }
 
@@ -3103,8 +3116,55 @@ document.addEventListener('click', async e => {
 });
 renderTeam();
 
+// ---- home: treatments still to log (today + yesterday)
+var HOME_LOG_BUSY = false;
+async function loadHomeLog(){
+  const card = document.getElementById('homeLogCard'); if (!card || HOME_LOG_BUSY) return;
+  HOME_LOG_BUSY = true;
+  try {
+    const idl = currentLang === 'id';
+    const t = todayISO();
+    const y = new Date(Date.now() - new Date().getTimezoneOffset()*60000 - 864e5).toISOString().slice(0,10);
+    const nowMin = new Date().getHours()*60 + new Date().getMinutes();
+    const all = isOwnerOrAdmin;
+    let qa = sb.from('ngd_appointments').select('client_id,client_name,artist_id,artist_name,appt_date,start_min,summary').eq('status','confirmed').gte('appt_date', y).lte('appt_date', t);
+    let qo = sb.from('ngd_schedule_overrides').select('client_id,artist_id,odate,omin,label').eq('is_open', false).not('client_id','is',null).gte('odate', y).lte('odate', t);
+    const qt = sb.from('ngd_treatments').select('client_id,treatment_date').neq('status','cancelled').gte('treatment_date', y).lte('treatment_date', t);
+    if (!all){ qa = qa.eq('artist_id', currentUser.id); qo = qo.eq('artist_id', currentUser.id); }
+    const [ra, ro, rt] = await Promise.all([qa, qo, qt]);
+    const logged = new Set((rt.data||[]).map(x => x.client_id + '|' + x.treatment_date));
+    const seen = new Set(), items = [];
+    for (const a of ra.data||[]){ if (!a.client_id) continue; const k = a.client_id + '|' + a.appt_date; if (seen.has(k)) continue; seen.add(k);
+      items.push({cid:a.client_id, name:a.client_name || ((clients.find(c => c.id === a.client_id)||{}).name) || 'Client', artist:a.artist_name || ((people.find(p => p.id === a.artist_id)||{}).name) || '', date:a.appt_date, start:a.start_min||0, what:a.summary||''}); }
+    for (const o of ro.data||[]){ const k = o.client_id + '|' + o.odate; if (seen.has(k)) continue; seen.add(k);
+      items.push({cid:o.client_id, name:((clients.find(c => c.id === o.client_id)||{}).name) || o.label || 'Client', artist:((people.find(p => p.id === o.artist_id)||{}).name) || '', date:o.odate, start:o.omin||0, what:''}); }
+    const todo = items.filter(i => !logged.has(i.cid + '|' + i.date) && (i.date < t || i.start <= nowMin))
+      .sort((a,b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.start - b.start));
+    if (!todo.length){ card.style.display = 'none'; return; }
+    card.style.display = '';
+    document.getElementById('homeLogTitle').textContent = idl ? `${todo.length} treatment belum di-log` : `${todo.length} treatment${todo.length === 1 ? '' : 's'} not logged yet`;
+    document.getElementById('homeLogHint').textContent = idl ? 'Log treatment hari ini atau besok, lalu kirim foto ke klien.' : 'Log it today or tomorrow, then send the photos to the client.';
+    document.getElementById('homeLogList').innerHTML = todo.map(i => `<div style="border-top:1px solid var(--hairline); padding:9px 0;">
+      <div class="row" style="justify-content:space-between;"><b style="font-weight:600; font-size:12.5px;">${esc(i.name)}</b><span class="tag">${i.date === t ? (idl ? 'Hari ini' : 'Today') : (idl ? 'Kemarin' : 'Yesterday')} · ${minToHM(i.start)}</span></div>
+      <div style="font-size:11px; color:var(--muted); margin-top:2px;">${all && i.artist ? esc(i.artist) + (i.what ? ' · ' : '') : ''}${esc(i.what)}</div>
+      <button class="btn-primary tap" data-homelog="${i.cid}|${i.date}|${esc(i.artist)}" style="width:100%; margin-top:7px; font-size:11.5px; padding:9px;">${idl ? '+ Log treatment & kirim foto' : '+ Log treatment & send photos'}</button>
+    </div>`).join('');
+  } finally { HOME_LOG_BUSY = false; }
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-homelog]'); if (!b) return;
+  const [cid, date, artist] = b.dataset.homelog.split('|');
+  openTreatmentForm(cid);
+  const d = document.getElementById('tfDate'); if (d) d.value = date;
+  const a = document.getElementById('tfArtist');
+  if (a && artist && [...a.options].some(o => o.value === artist || o.text === artist)){ a.value = artist; a.dispatchEvent(new Event('change')); }
+  window._tfAfterSave = 'photos';
+  const f = document.getElementById('tf'); if (f) f.scrollIntoView({behavior:'smooth', block:'start'});
+});
+
 // ---- home: greeting, today's bookings, team announcements
 function renderHome(){
+  loadHomeLog();
   const id = currentLang === 'id', h = new Date().getHours();
   const greet = id ? (h < 11 ? 'Selamat pagi' : h < 15 ? 'Selamat siang' : h < 18 ? 'Selamat sore' : 'Selamat malam') : (h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening');
   document.getElementById('homeGreet').textContent = `${greet}, ${currentUser.name}`;
