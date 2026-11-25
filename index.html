@@ -152,6 +152,7 @@ function applyTheme(name){
 const TABS = [
   {key:'home', label:'Home', icon:'🏠'},
   {key:'finance', label:'Money', icon:'📊', roles:['Owner','Admin','Senior artist','Junior artist']},
+  {key:'review', label:'Evaluasi', icon:'📋'},
   {key:'clients', label:'Clients', icon:'💅'},
   {key:'calendar', label:'Bookings', icon:'📅'},
   {key:'knowledge', label:'Knowledge', icon:'📚'},
@@ -3248,6 +3249,84 @@ document.addEventListener('click', e => {
   if (a && artist && [...a.options].some(o => o.value === artist || o.text === artist)){ a.value = artist; a.dispatchEvent(new Event('change')); }
   window._tfAfterSave = 'photos';
   const f = document.getElementById('tf'); if (f) f.scrollIntoView({behavior:'smooth', block:'start'});
+});
+
+// ---------- MONTHLY EVALUATION (punctuality: on time vs late, + owner's note) ----------
+pages.insertAdjacentHTML('beforeend', `
+<div class="pagesec section-hidden" id="page-review">
+  <div class="card"><div class="eyebrow" id="revEyebrow">Evaluasi bulanan</div><div class="title" id="revTitle">Ketepatan posting</div>
+    <div class="row" style="gap:8px; margin-top:10px; align-items:center;"><input type="month" id="revMonth" style="width:auto; padding:5px 8px; font-size:12px;"><span style="font-size:10.5px; color:var(--muted); flex:1;" id="revRule"></span></div></div>
+  <div id="revList"></div>
+</div>`);
+(function(){
+  const st = document.createElement('style');
+  st.textContent = '@media print{ body.print-one *{visibility:hidden !important;} body.print-one .printme, body.print-one .printme *{visibility:visible !important;} body.print-one .printme{position:absolute; left:0; top:0; width:100%; border:0;} body.print-one .noprint{display:none !important;} }';
+  document.head.appendChild(st);
+})();
+let REV = null;
+const revT = (id, en) => currentLang === 'id' ? id : en;
+function revMonthVal(){ const el = document.getElementById('revMonth'); if (!el.value){ const n = new Date(); el.value = n.getFullYear() + '-' + String(n.getMonth()+1).padStart(2,'0'); } return el.value + '-01'; }
+async function loadReview(){
+  const list = document.getElementById('revList'); if (!list) return;
+  document.getElementById('revEyebrow').textContent = revT('Evaluasi bulanan', 'Monthly review');
+  document.getElementById('revTitle').textContent = revT('Ketepatan posting', 'Posting on time');
+  document.getElementById('revRule').textContent = revT('Tepat waktu = rincian harga dan foto selesai di hari treatment.', 'On time = price details and photos done on the treatment day.');
+  list.innerHTML = '<div class="card" style="font-size:12px; color:var(--muted);">…</div>';
+  const { data, error } = await sb.rpc('ngd_punctuality', { p_month: revMonthVal() });
+  if (error){ list.innerHTML = `<div class="card" style="font-size:12px; color:#B0566A;">${esc(error.message)}</div>`; return; }
+  REV = data; drawReview();
+}
+function drawReview(){
+  const list = document.getElementById('revList'), d = REV; if (!d) return;
+  const mName = new Date(d.month + 'T00:00:00').toLocaleDateString(currentLang === 'id' ? 'id-ID' : 'en-GB', { month:'long', year:'numeric' });
+  const startNote = d.month < d.start.slice(0,7) + '-01' ? '' : (d.month.slice(0,7) === d.start.slice(0,7) ? revT(`Mulai dihitung ${new Date(d.start + 'T00:00:00').toLocaleDateString('id-ID',{day:'numeric',month:'short'})}.`, `Counted from ${new Date(d.start + 'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'})}.`) : '');
+  if (!(d.people||[]).length){ list.innerHTML = `<div class="card" style="font-size:12px; color:var(--muted);">${revT('Belum ada data.', 'No data yet.')}</div>`; return; }
+  list.innerHTML = d.people.map(p => {
+    const done = p.on_time + p.late, total = done + p.overdue, pct = total ? Math.round(p.on_time / total * 100) : null;
+    const mood = !total ? revT('Belum ada treatment yang dihitung bulan ini.', 'No treatments counted this month yet.')
+      : pct === 100 ? revT('🥰 Semua tepat waktu! Terima kasih sudah membuat klien senang.', '🥰 Everything on time! Thank you for keeping clients happy.')
+      : pct >= 80 ? revT('👍 Hampir semua tepat waktu. Sedikit lagi sempurna!', '👍 Almost all on time. Nearly perfect!')
+      : revT('😢 Masih cukup sering terlambat. Yuk bulan depan posting di hari yang sama.', '😢 Still late quite often. Next month, post on the same day.');
+    const icon = s => s === 'on_time' ? '✅' : s === 'late' ? '⏰' : s === 'overdue' ? '😢' : '⏳';
+    const lbl = i => i.status === 'on_time' ? revT('Tepat waktu', 'On time') : i.status === 'late' ? revT(`Terlambat H+${i.days}`, `Late H+${i.days}`) : i.status === 'overdue' ? revT(`Belum diposting · H+${i.days}`, `Not posted · H+${i.days}`) : revT('Hari ini', 'Today');
+    const fd = x => new Date(x + 'T00:00:00').toLocaleDateString(currentLang === 'id' ? 'id-ID' : 'en-GB', { day:'numeric', month:'short' });
+    const box = (n, l, sub, col) => `<div class="stat" style="${col ? 'background:' + col + ';' : ''}"><div class="num">${n}</div><div class="label">${l}</div>${sub ? `<div class="label" style="margin-top:1px;">${sub}</div>` : ''}</div>`;
+    return `<div class="card revsheet" data-rev="${p.artist_id}">
+      <div class="row" style="justify-content:space-between; align-items:flex-start;"><div><div class="eyebrow">${esc(mName)}</div><div class="title" style="font-size:15px;">${esc(p.name)}</div><div style="font-size:10.5px; color:var(--muted); margin-top:2px;">${esc(p.role||'')}${startNote ? ' · ' + startNote : ''}</div></div>
+        <button class="pill tap noprint" data-revprint="${p.artist_id}" style="font-size:10.5px;">🖨️ ${revT('Simpan / print', 'Save / print')}</button></div>
+      <div class="row" style="gap:6px; margin-top:12px;">${box('✅ ' + p.on_time, revT('Tepat waktu', 'On time'))}${box('⏰ ' + p.late, revT('Terlambat', 'Late'), p.avg_late ? revT(`rata-rata H+${p.avg_late}`, `avg H+${p.avg_late}`) : '')}</div>
+      <div class="row" style="gap:6px; margin-top:6px;">${box('😢 ' + p.overdue, revT('Belum diposting', 'Not posted yet'))}${box(pct == null ? '–' : pct + '%', revT('Tepat waktu', 'On time rate'))}</div>
+      ${total ? `<div style="height:7px; border-radius:9px; background:var(--tint); margin-top:10px; overflow:hidden; display:flex;"><div style="width:${p.on_time/total*100}%; background:var(--text);"></div><div style="width:${p.late/total*100}%; background:#C9A9A6;"></div><div style="width:${p.overdue/total*100}%; background:#B0566A;"></div></div>` : ''}
+      <div style="font-size:12px; margin-top:10px; line-height:1.5;">${mood}</div>
+      ${(p.items||[]).length ? `<details style="margin-top:8px;"><summary style="font-size:11px; color:var(--muted); cursor:pointer;">${revT('Rincian per klien', 'Per client')} (${p.items.length})</summary>
+        <div style="margin-top:6px;">${p.items.map(i => `<div class="row" style="justify-content:space-between; font-size:11.5px; padding:4px 0; border-top:1px dotted var(--hairline);"><span>${icon(i.status)} ${esc(i.client||'Client')} · ${fd(i.date)}</span><span style="color:${i.status === 'on_time' ? 'var(--text)' : '#B0566A'};">${lbl(i)}</span></div>`).join('')}</div></details>` : ''}
+      <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--hairline);">
+        <div style="font-size:11px; font-weight:600;">${revT('Catatan dari owner', "Owner's note")}</div>
+        ${isOwner ? `<textarea class="noprint" data-revnote="${p.artist_id}" placeholder="${revT('Yang sudah bagus, yang perlu diperbaiki…', 'What went well, what to improve…')}" style="min-height:54px; margin-top:4px; font-size:12px;">${esc(p.note||'')}</textarea>` : ''}
+        <div class="${isOwner ? 'printonly' : ''}" style="font-size:12px; margin-top:4px; white-space:pre-line; ${isOwner ? 'display:none;' : ''}">${esc(p.note||'') || '<span style="color:var(--muted);">–</span>'}</div>
+        <div style="font-size:11px; font-weight:600; margin-top:8px;">${revT('Target bulan depan', 'Target for next month')}</div>
+        ${isOwner ? `<input class="noprint" data-revtarget="${p.artist_id}" value="${esc(p.target||'')}" placeholder="${revT('mis. 100% posting di hari H', 'e.g. 100% posted on the day')}" style="margin-top:4px; font-size:12px;">` : ''}
+        <div class="${isOwner ? 'printonly' : ''}" style="font-size:12px; margin-top:4px; ${isOwner ? 'display:none;' : ''}">${esc(p.target||'') || '<span style="color:var(--muted);">–</span>'}</div>
+        ${isOwner ? `<button class="btn-primary tap noprint" data-revsave="${p.artist_id}" style="width:100%; margin-top:8px; font-size:11.5px; padding:9px;">${revT('Simpan catatan', 'Save note')}</button>` : ''}
+      </div></div>`; }).join('');
+}
+document.addEventListener('change', e => { if (e.target.id === 'revMonth') loadReview(); });
+document.addEventListener('click', async e => {
+  const nb = e.target.closest('.navbtn'); if (nb && nb.dataset.key === 'review') loadReview();
+  const sv = e.target.closest('[data-revsave]');
+  if (sv){ const id = sv.dataset.revsave, note = document.querySelector(`[data-revnote="${id}"]`).value.trim(), target = document.querySelector(`[data-revtarget="${id}"]`).value.trim();
+    sv.disabled = true; sv.textContent = '…';
+    const { error } = await sb.from('ngd_reviews').upsert({ staff_id:id, month: revMonthVal(), note: note || null, target: target || null, updated_at: new Date().toISOString(), updated_by: currentUser.id });
+    sv.disabled = false; if (error) { sv.textContent = revT('Simpan catatan', 'Save note'); return alert(error.message); }
+    const p = (REV.people||[]).find(x => x.artist_id === id); if (p){ p.note = note; p.target = target; }
+    drawReview(); return; }
+  const pr = e.target.closest('[data-revprint]');
+  if (pr){ const sheet = document.querySelector(`.revsheet[data-rev="${pr.dataset.revprint}"]`); if (!sheet) return;
+    sheet.querySelectorAll('details').forEach(x => x.open = true);
+    sheet.querySelectorAll('.printonly').forEach(x => x.style.display = '');
+    sheet.classList.add('printme'); document.body.classList.add('print-one');
+    setTimeout(() => { window.print(); setTimeout(() => { document.body.classList.remove('print-one'); sheet.classList.remove('printme'); sheet.querySelectorAll('.printonly').forEach(x => x.style.display = 'none'); }, 500); }, 50);
+  }
 });
 
 // ---- home: greeting, today's bookings, team announcements
