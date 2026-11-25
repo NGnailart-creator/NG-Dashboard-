@@ -2615,6 +2615,14 @@ async function renderBkDay(){ return renderBkMonth(); }
 // Keep the page where it was when lists are redrawn (schedule, requests, calendar)
 function keepScroll(fn){ const y = window.scrollY; const r = fn(); const back = () => { if (Math.abs(window.scrollY - y) > 2) window.scrollTo(0, y); }; back(); requestAnimationFrame(back); return r; }
 let BK_FORM_Y = null;
+// Remember which day row you tapped (and where it was on screen) so the schedule comes back to that exact day
+let BK_ANCHOR = null;
+document.addEventListener('click', e => { const r = e.target.closest && e.target.closest('[data-bkday]'); if (r) BK_ANCHOR = { date: r.dataset.bkday, top: r.getBoundingClientRect().top, at: Date.now() }; }, true);
+function bkToAnchor(){
+  if (!BK_ANCHOR) return;
+  const a = BK_ANCHOR, go = () => { const r = document.querySelector(`[data-bkday="${a.date}"]`); if (!r) return; const d = r.getBoundingClientRect().top - a.top; if (Math.abs(d) > 2) window.scrollBy(0, d); };
+  go(); requestAnimationFrame(go); setTimeout(go, 250); setTimeout(go, 600);
+}
 let BK_MDATA = [], BK_EDIT = false, BK_PEND = new Map();
 const canBulkEdit = () => { const a = document.getElementById('bkSchArtist').value; return isOwner || (a === currentUser.id && ['Senior artist','Junior artist'].includes(currentUser.role)); };
 function bkEditBar(){
@@ -2627,14 +2635,16 @@ function bkEditBar(){
         <button class="tap" id="bkEditSave" style="background:var(--bg); color:var(--text); border:0; border-radius:20px; padding:6px 14px; font-size:11px; font-weight:600;" ${BK_PEND.size ? '' : 'disabled'}>Save</button></div>`
     : `<button class="btn-ghost tap" id="bkEditStart" style="width:100%; font-size:11px;">✎ Edit whole month (no confirmation for each tap)</button>`;
 }
-async function renderBkMonth(){
+async function renderBkMonth(opts){
   const artist = document.getElementById('bkSchArtist').value, box = document.getElementById('bkMonth');
   document.getElementById('bkMLabel').textContent = MONTH_NAMES[BK_MONTH.m] + ' ' + BK_MONTH.y;
   if (!artist){ box.innerHTML = ''; return; }
   const first = `${BK_MONTH.y}-${String(BK_MONTH.m+1).padStart(2,'0')}-01`;
   const { data, error } = await sb.rpc('ngd_team_month', { p_artist: artist, p_month: first });
   if (error){ box.innerHTML = `<div style="font-size:11px; color:#B0566A;">${esc(error.message)}</div>`; return; }
-  BK_MDATA = data || []; drawBkMonth();
+  BK_MDATA = data || [];
+  const useAnchor = !(opts && opts.auto) && BK_ANCHOR && Date.now() - BK_ANCHOR.at < 10 * 60000;
+  if (useAnchor){ drawBkMonthNow(); bkToAnchor(); setTimeout(() => { BK_ANCHOR = null; }, 700); } else drawBkMonth();
 }
 function drawBkMonth(){ return keepScroll(drawBkMonthNow); }
 function drawBkMonthNow(){
@@ -2645,7 +2655,7 @@ function drawBkMonthNow(){
     slots.sort((a,b) => a.time < b.time ? -1 : 1); return { ...d, slots }; });
   box.innerHTML = (data||[]).length ? `<div style="background:var(--surface,#fff); border:1px solid var(--hairline); border-radius:16px; padding:6px 10px;">` + data.map(d => {
     const dt = new Date(d.date + 'T00:00:00'), past = d.date < today;
-    return `<div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:7px 0; border-bottom:1px dotted var(--hairline); ${past ? 'opacity:.45;' : ''}">
+    return `<div data-bkday="${d.date}" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:7px 0; border-bottom:1px dotted var(--hairline); ${past ? 'opacity:.45;' : ''}">
       <div style="width:34px; text-align:center; flex:none;"><div style="font-size:15px;">${dt.getDate()}</div><div style="font-size:8.5px; letter-spacing:.12em; color:var(--muted); text-transform:uppercase;">${dt.toLocaleDateString('en-GB',{weekday:'short'})}</div></div>
       <div style="display:flex; flex-wrap:wrap; gap:5px; flex:1;">${(d.slots||[]).map((sl, si, arr) => {
         const t = sl.time.replace(':','.'), sep = si && arr[si-1].group !== sl.group ? '<span style="width:1px; background:var(--hairline); align-self:stretch; margin:0 2px;"></span>' : '';
@@ -2835,7 +2845,7 @@ function bkToggle(date, time, open){
     <div class="row" style="gap:8px; margin-top:16px;"><button class="btn-ghost tap" id="bkTgCancel" style="flex:1;">Cancel</button><button class="btn-primary tap" id="bkTgOk" style="flex:1;">${open ? 'Open' : 'Close'}</button></div></div>`;
   const openY = window.scrollY;
   document.body.appendChild(ov);
-  const close = () => { ov.remove(); window.scrollTo(0, openY); };
+  const close = () => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); ov.remove(); window.scrollTo(0, openY); bkToAnchor(); };
   ov.addEventListener('click', e => { if (e.target === ov) close(); });
   // who-is-it-for: search saved clients by name, Instagram or phone
   let SEL = { type:'none' };
@@ -3241,7 +3251,7 @@ document.addEventListener('click', async e => { const d = e.target.closest('[dat
 document.getElementById('langToggle').addEventListener('click', () => { renderHome(); loadAnnouncements(); });
 loadAnnouncements();
 loadBookCfg(); loadAppts().then(renderHome); renderHome(); renderBkDay(); loadNotifs();
-setInterval(() => { loadNotifs(); loadAppts(); reloadCal(); if (!BK_EDIT) renderBkMonth(); }, 60000);
+setInterval(() => { loadNotifs(); loadAppts(); reloadCal(); if (!BK_EDIT) renderBkMonth({ auto:true }); }, 60000);
 document.addEventListener('click', async e => { const bf = e.target.closest('[data-bookfor]'); if (!bf) return;
   showPage('calendar'); if (!BOOK_CFG) await loadBookCfg();
   document.getElementById('bkAddForm').innerHTML = bookAddFormHtml();
