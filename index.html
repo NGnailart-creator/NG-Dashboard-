@@ -3220,16 +3220,19 @@ async function loadHomeLog(){
     if (trIds.length){ const rs = await sb.from('ngd_sets').select('treatment_id').in('treatment_id', trIds).not('sent_at','is',null); (rs.data||[]).forEach(x => sent.add(x.treatment_id)); }
     const seen = new Set(), items = [];
     for (const a of ra.data||[]){ if (!a.client_id) continue; const k = a.client_id + '|' + a.appt_date; if (seen.has(k)) continue; seen.add(k);
-      items.push({cid:a.client_id, name:a.client_name || ((clients.find(c => c.id === a.client_id)||{}).name) || 'Client', artist:a.artist_name || ((people.find(p => p.id === a.artist_id)||{}).name) || '', date:a.appt_date, start:a.start_min||0, what:a.summary||'', svc:a.services||null}); }
+      items.push({aid:a.artist_id, cid:a.client_id, name:a.client_name || ((clients.find(c => c.id === a.client_id)||{}).name) || 'Client', artist:a.artist_name || ((people.find(p => p.id === a.artist_id)||{}).name) || '', date:a.appt_date, start:a.start_min||0, what:a.summary||'', svc:a.services||null}); }
     for (const o of ro.data||[]){ const k = o.client_id + '|' + o.odate; if (seen.has(k)) continue; seen.add(k);
-      items.push({cid:o.client_id, name:((clients.find(c => c.id === o.client_id)||{}).name) || o.label || 'Client', artist:((people.find(p => p.id === o.artist_id)||{}).name) || '', date:o.odate, start:o.omin||0, what:''}); }
-    const todo = items.map(i => { const tr = trByKey.get(i.cid + '|' + i.date); return { ...i, tr, need: !tr ? 'log' : (sent.has(tr) ? '' : 'photo') }; })
+      items.push({aid:o.artist_id, cid:o.client_id, name:((clients.find(c => c.id === o.client_id)||{}).name) || o.label || 'Client', artist:((people.find(p => p.id === o.artist_id)||{}).name) || '', date:o.odate, start:o.omin||0, what:''}); }
+    // deadline: 30 min before the same artist's next client that day, otherwise 18.30 (studio closes)
+    const dlOf = i => { const n = items.filter(x => x.aid === i.aid && x.date === i.date && x.cid !== i.cid && x.start > i.start).map(x => x.start); return n.length ? Math.max(Math.min(...n) - 30, i.start + 30) : 1110; };
+    const todo = items.map(i => { const tr = trByKey.get(i.cid + '|' + i.date), dl = dlOf(i); return { ...i, tr, dl, nextClient: dl !== 1110, need: !tr ? 'log' : (sent.has(tr) ? '' : 'photo') }; })
       .filter(i => i.need && (i.date < t || i.start <= nowMin))
       .sort((a,b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.start - b.start));
     window.HOME_TODO = todo;
     if (!todo.length){ card.style.display = 'none'; return; }
     card.style.display = '';
-    const lateN = todo.filter(i => i.date < t).length;
+    const isLate = i => i.date < t || nowMin > i.dl;
+    const lateN = todo.filter(isLate).length;
     card.style.borderColor = lateN ? '#B0566A' : 'var(--hairline)';
     const daysLate = d => Math.round((new Date(t + 'T00:00:00') - new Date(d + 'T00:00:00')) / 864e5);
     const fmtD = d => new Date(d + 'T00:00:00').toLocaleDateString(idl ? 'id-ID' : 'en-GB', { weekday:'short', day:'numeric', month:'short' });
@@ -3240,18 +3243,22 @@ async function loadHomeLog(){
       ? (idl ? 'Klien sudah menunggu rincian harga dan foto nail art-nya 🥺 Mohon selesaikan sekarang, sebelum mengerjakan hal lain.' : 'Your clients are waiting for their price details and nail art photos 🥺 Please finish these now, before anything else.')
       : (idl ? 'Masukkan rincian harga dan kirim foto ke klien hari ini ya' : 'Add the price details and send the photos to your client today');
     document.getElementById('homeLogList').innerHTML = todo.map(i => {
-      const late = i.date < t, n = daysLate(i.date);
+      const late = isLate(i), past = i.date < t, n = daysLate(i.date), dlTxt = minToHM(i.dl);
       const missing = i.need === 'log' ? (idl ? 'Rincian harga & foto belum diisi' : 'Price details & photos missing') : (idl ? 'Harga sudah diisi · foto belum dikirim ke klien' : 'Price done · photos not sent to the client yet');
-      const tag = late ? `<span class="tag" style="background:#B0566A; color:#fff;">${idl ? 'Terlambat' : 'Late'} · H+${n}</span>` : `<span class="tag">${idl ? 'Hari ini' : 'Today'} · ${minToHM(i.start)}</span>`;
-      const msg = late
+      const tag = late ? `<span class="tag" style="background:#B0566A; color:#fff;">${idl ? 'Terlambat' : 'Late'} · ${past ? 'H+' + n : (idl ? 'lewat ' : 'after ') + dlTxt}</span>` : `<span class="tag">${idl ? 'Hari ini' : 'Today'} · ${minToHM(i.start)}</span>`;
+      const why = i.nextClient ? (idl ? '30 menit sebelum klien berikutnya' : '30 min before your next client') : (idl ? 'sebelum studio tutup' : 'before the studio closes');
+      const msg = late && !past
+        ? `<div style="font-size:11.5px; color:#B0566A; font-weight:600; margin-top:5px; line-height:1.4;">${idl ? `😢 Kamu sudah lewat batas jam ${dlTxt} (${why}). Kliennya masih menunggu — mohon isi harga dan kirim fotonya sekarang.` : `😢 You missed the ${dlTxt} deadline (${why}). Your client is still waiting — please add the price and send the photos now.`}</div>`
+        : late
         ? `<div style="font-size:11.5px; color:#B0566A; font-weight:600; margin-top:5px; line-height:1.4;">${idl ? `😢 Kamu sudah terlambat ${n} hari. Treatment ini seharusnya diposting pada hari ${fmtD(i.date)}. Kliennya masih menunggu — mohon dikerjakan sekarang.` : `😢 You are late by ${n} day${n === 1 ? '' : 's'}. This should have been posted on ${fmtD(i.date)}. Your client is still waiting — please complete it now.`}</div>`
-        : `<div style="font-size:11px; color:var(--muted); margin-top:4px;">${idl ? '✨ Kliennya lagi nungguin nih! Yuk posting sekarang, biar dia bisa post ke Instagram-nya atau share ke teman-temannya 👉🏻👈🏻🥰' : "✨ Your client is waiting! Post it now so she can share it on her Instagram or with her friends 👉🏻👈🏻🥰"}</div>`;
+        : `<div style="font-size:11px; color:var(--muted); margin-top:4px;">${idl ? '✨ Kliennya lagi nungguin nih! Yuk posting sekarang, biar dia bisa post ke Instagram-nya atau share ke teman-temannya 👉🏻👈🏻🥰' : "✨ Your client is waiting! Post it now so she can share it on her Instagram or with her friends 👉🏻👈🏻🥰"}</div>
+           <div style="font-size:11px; font-weight:600; margin-top:4px;">⏰ ${idl ? `Batas: jam ${dlTxt} · ${why}` : `Deadline: ${dlTxt} · ${why}`}</div>`;
       const btn = i.need === 'log'
         ? `<button class="btn-primary tap" data-homelog="${i.cid}|${i.date}|${esc(i.artist)}" data-hidx="${todo.indexOf(i)}" style="width:100%; margin-top:7px; font-size:11.5px; padding:9px;">${idl ? (late ? 'Kerjakan sekarang · log harga & foto' : '+ Log harga & kirim foto') : (late ? 'Do it now · log price & photos' : '+ Log price & send photos')}</button>`
         : `<button class="btn-primary tap" data-homeset="${i.tr}" style="width:100%; margin-top:7px; font-size:11.5px; padding:9px;">${idl ? (late ? 'Kirim foto sekarang' : 'Kirim foto ke klien') : (late ? 'Send photos now' : 'Send photos to client')}</button>`;
       return `<div style="border-top:1px solid var(--hairline); padding:9px 0;">
       <div class="row" style="justify-content:space-between;"><b style="font-weight:600; font-size:12.5px;">${esc(i.name)}</b>${tag}</div>
-      <div style="font-size:11px; color:var(--muted); margin-top:2px;">${all && i.artist ? esc(i.artist) + ' · ' : ''}${esc(missing)}${late ? ` · ${fmtD(i.date)}` : ''}</div>
+      <div style="font-size:11px; color:var(--muted); margin-top:2px;">${all && i.artist ? esc(i.artist) + ' · ' : ''}${esc(missing)}${past ? ` · ${fmtD(i.date)}` : ''}</div>
       ${msg}${btn}</div>`; }).join('');
   } finally { HOME_LOG_BUSY = false; }
 }
@@ -3326,7 +3333,7 @@ async function loadReview(){
   const list = document.getElementById('revList'); if (!list) return;
   document.getElementById('revEyebrow').textContent = revT('Evaluasi bulanan', 'Monthly review');
   document.getElementById('revTitle').textContent = revT('Ketepatan posting', 'Posting on time');
-  document.getElementById('revRule').textContent = revT('Tepat waktu = rincian harga dan foto selesai di hari treatment.', 'On time = price details and photos done on the treatment day.');
+  document.getElementById('revRule').textContent = revT('Tepat waktu = harga dan foto selesai paling lambat 30 menit sebelum klien berikutnya, atau jam 18.30 untuk klien terakhir.', 'On time = price and photos done by 30 min before the next client, or 18.30 for the last client.');
   list.innerHTML = '<div class="card" style="font-size:12px; color:var(--muted);">…</div>';
   const { data, error } = await sb.rpc('ngd_punctuality', { p_month: revMonthVal() });
   if (error){ list.innerHTML = `<div class="card" style="font-size:12px; color:#B0566A;">${esc(error.message)}</div>`; return; }
@@ -3343,14 +3350,15 @@ function drawReview(){
       : pct === 100 ? revT('🥰 Semua tepat waktu! Terima kasih sudah membuat klien senang.', '🥰 Everything on time! Thank you for keeping clients happy.')
       : pct >= 80 ? revT('👍 Hampir semua tepat waktu. Sedikit lagi sempurna!', '👍 Almost all on time. Nearly perfect!')
       : revT('😢 Masih cukup sering terlambat. Yuk bulan depan posting di hari yang sama.', '😢 Still late quite often. Next month, post on the same day.');
+    const fm = m => m == null ? '' : m < 60 ? m + revT(' mnt', ' min') : Math.floor(m/60) + revT(' jam', 'h') + (m % 60 ? ' ' + (m % 60) + revT(' mnt', 'm') : '');
     const icon = s => s === 'on_time' ? '✅' : s === 'late' ? '⏰' : s === 'overdue' ? '😢' : '⏳';
-    const lbl = i => i.status === 'on_time' ? revT('Tepat waktu', 'On time') : i.status === 'late' ? revT(`Terlambat H+${i.days}`, `Late H+${i.days}`) : i.status === 'overdue' ? revT(`Belum diposting · H+${i.days}`, `Not posted · H+${i.days}`) : revT('Hari ini', 'Today');
+    const lbl = i => i.status === 'on_time' ? revT(`Tepat waktu (batas ${i.deadline})`, `On time (by ${i.deadline})`) : i.status === 'late' ? revT(`Terlambat ${fm(i.late_min)}`, `Late ${fm(i.late_min)}`) : i.status === 'overdue' ? revT(`Belum diposting · lewat ${fm(i.late_min)}`, `Not posted · ${fm(i.late_min)} over`) : revT(`Batas ${i.deadline}`, `Due ${i.deadline}`);
     const fd = x => new Date(x + 'T00:00:00').toLocaleDateString(currentLang === 'id' ? 'id-ID' : 'en-GB', { day:'numeric', month:'short' });
     const box = (n, l, sub, col) => `<div class="stat" style="${col ? 'background:' + col + ';' : ''}"><div class="num">${n}</div><div class="label">${l}</div>${sub ? `<div class="label" style="margin-top:1px;">${sub}</div>` : ''}</div>`;
     return `<div class="card revsheet" data-rev="${p.artist_id}">
       <div class="row" style="justify-content:space-between; align-items:flex-start;"><div><div class="eyebrow">${esc(mName)}</div><div class="title" style="font-size:15px;">${esc(p.name)}</div><div style="font-size:10.5px; color:var(--muted); margin-top:2px;">${esc(p.role||'')}${startNote ? ' · ' + startNote : ''}</div></div>
         <button class="pill tap noprint" data-revprint="${p.artist_id}" style="font-size:10.5px;">🖨️ ${revT('Simpan / print', 'Save / print')}</button></div>
-      <div class="row" style="gap:6px; margin-top:12px;">${box('✅ ' + p.on_time, revT('Tepat waktu', 'On time'))}${box('⏰ ' + p.late, revT('Terlambat', 'Late'), p.avg_late ? revT(`rata-rata H+${p.avg_late}`, `avg H+${p.avg_late}`) : '')}</div>
+      <div class="row" style="gap:6px; margin-top:12px;">${box('✅ ' + p.on_time, revT('Tepat waktu', 'On time'))}${box('⏰ ' + p.late, revT('Terlambat', 'Late'), p.avg_late_min ? revT(`rata-rata ${fm(p.avg_late_min)}`, `avg ${fm(p.avg_late_min)}`) : '')}</div>
       <div class="row" style="gap:6px; margin-top:6px;">${box('😢 ' + p.overdue, revT('Belum diposting', 'Not posted yet'))}${box(pct == null ? '–' : pct + '%', revT('Tepat waktu', 'On time rate'))}</div>
       ${total ? `<div style="height:7px; border-radius:9px; background:var(--tint); margin-top:10px; overflow:hidden; display:flex;"><div style="width:${p.on_time/total*100}%; background:var(--text);"></div><div style="width:${p.late/total*100}%; background:#C9A9A6;"></div><div style="width:${p.overdue/total*100}%; background:#B0566A;"></div></div>` : ''}
       <div style="font-size:12px; margin-top:10px; line-height:1.5;">${mood}</div>
