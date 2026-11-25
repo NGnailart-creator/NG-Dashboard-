@@ -476,7 +476,7 @@ pages.insertAdjacentHTML('beforeend', `
   </div>
   <div class="card">
     <div style="font-weight:600; font-size:13px; margin-bottom:6px;">Google Calendar</div>
-    <div style="font-size:11.5px; color:var(--muted); line-height:1.5;">Bookings are added to Google Calendar one by one: open <b>Bookings</b> and tap <b>📅</b> on a request or <b>Google Calendar</b> in Upcoming. Google opens with the title, time and invites filled in — tap <b>Save</b> there.<br><br>The dashboard never edits or deletes anything in Google Calendar. Automatic syncing is not switched on yet.</div>
+    <div style="font-size:11.5px; color:var(--muted); line-height:1.5;">Bookings sync to Google Calendar automatically. Each nail artist has her own calendar (“NG – name”); the admin and owner see all of them. Confirmed bookings and slots closed for a client appear by themselves, move when rescheduled and disappear when cancelled. The event also shows the DP status.<br><br>Make changes here in the dashboard, not in Google Calendar.</div>
     <div class="row" style="gap:6px; margin-top:10px;"><button class="btn-primary tap" style="flex:1;" onclick="(document.getElementById('bkReqCard')||document.body).scrollIntoView({behavior:'smooth'})">See booking requests</button><a class="btn-ghost tap" style="flex:1; text-align:center; text-decoration:none;" href="https://calendar.google.com/calendar/r" target="_blank" rel="noopener">Open Google Calendar</a></div>
   </div>
 </div>`);
@@ -2440,6 +2440,25 @@ const BK_ST = {awaiting_dp:'Waiting for DP', awaiting_approval:'DP to check', co
 let BOOK_CFG = null, APPTS = [];
 const bookArtists = () => people.filter(p => ['Owner','Senior artist','Junior artist'].includes(p.role));
 const canManageAppt = a => isOwnerOrAdmin || a.artist_id === currentUser.id;
+const DP_RECV = {ig:'DP via IG', website:'DP via website', personal:'DP paid personally'};
+const dpDone = a => !!(DP_RECV[a.dp_status] || a.proof_path || a.proof_deleted_at);
+const dpWho = a => { const by = (people.find(p => p.id === a.dp_by) || {}).name || ''; return by ? ' · checked by ' + esc(by) : ''; };
+// status line used in Upcoming
+function dpStatusHtml(a){
+  if (DP_RECV[a.dp_status]) return `<div style="font-size:10.5px; margin-top:3px;">✅ ${DP_RECV[a.dp_status]}${dpWho(a)}${canManageAppt(a) ? ` <span class="tap" data-dpset="${a.id}|" style="cursor:pointer; color:var(--muted); text-decoration:underline; margin-left:6px;">Change</span>` : ''}</div>`;
+  if (a.proof_path || a.proof_deleted_at) return `<div style="font-size:10.5px; margin-top:3px;">✅ DP via website · transfer proof uploaded</div>`;
+  if (a.dp_status === 'none') return `<div style="font-size:10.5px; margin-top:3px; color:#B0566A;">❌ Belum DP — see Booking requests</div>`;
+  return `<div style="font-size:10.5px; margin-top:3px; color:var(--muted);">⏳ DP not checked yet — see Booking requests</div>`;
+}
+// big choice buttons used in the DP check list
+function dpPickerHtml(a){
+  const none = a.dp_status === 'none';
+  return `<div class="row" style="gap:6px; margin-top:8px;">
+      <button class="btn-primary tap" data-dpset="${a.id}|ig" style="flex:1; font-size:12px; padding:9px;">✓ DP via IG</button>
+      <button class="${none ? 'btn-primary' : 'btn-ghost'} tap" data-dpset="${a.id}|none" style="flex:1; font-size:12px; padding:9px; ${none ? 'background:#B0566A; border-color:#B0566A;' : ''}">${none ? '❌ Belum DP' : 'Belum DP'}</button>
+    </div>
+    <div style="font-size:10px; color:var(--muted); margin-top:5px; text-align:center;">Other: <span class="tap" data-dpset="${a.id}|website" style="cursor:pointer; text-decoration:underline;">DP via website</span> · <span class="tap" data-dpset="${a.id}|personal" style="cursor:pointer; text-decoration:underline;">DP paid personally</span></div>`;
+}
 
 const calPage = document.getElementById('page-calendar');
 calPage.firstElementChild.insertAdjacentHTML('afterend', `
@@ -2508,12 +2527,23 @@ function renderBkRequests(){
       <div style="font-size:11px; margin-top:4px;">DP Rp ${rupiah(a.dp_amount)}${a.status==='awaiting_dp' ? ` · proof due ${new Date(a.hold_until).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'})}` : ''}</div>
       ${a.proof_path ? `<div class="bkProof" data-proof="${esc(a.proof_path)}" style="margin-top:8px;"><span style="font-size:11px; color:var(--muted);">Loading proof…</span></div>` : ''}
       <div class="row" style="gap:6px; margin-top:8px;">
-        <button class="btn-ghost tap" data-gcal="${a.id}" style="font-size:11px; padding:7px 9px;" title="Add to Google Calendar">📅</button>
         <button class="btn-primary tap" data-bkok="${a.id}" style="flex:1; font-size:11px; padding:7px;">✓ Approve</button>
         <button class="btn-ghost tap" data-bkno="${a.id}" style="flex:1; font-size:11px; padding:7px;">Reject</button>
       </div>
       ${a.status==='awaiting_dp' ? `<div style="font-size:10px; color:var(--muted); margin-top:4px;">No proof yet. Approve only if the DP already arrived (e.g. sent via DM).</div>` : ''}
     </div>`).join('') : '<div style="font-size:12px; color:var(--muted);">No requests waiting.</div>';
+  const noDp = APPTS.filter(a => canManageAppt(a) && a.status === 'confirmed' && !dpDone(a))
+    .sort((x,y) => (x.dp_status === 'none' ? 0 : 1) - (y.dp_status === 'none' ? 0 : 1) || (x.appt_date < y.appt_date ? -1 : x.appt_date > y.appt_date ? 1 : x.start_min - y.start_min));
+  if (noDp.length){
+    const nNone = noDp.filter(a => a.dp_status === 'none').length;
+    el.innerHTML += `<div style="margin-top:18px; padding-top:12px; border-top:2px solid var(--text);">
+      <div style="font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted);">Confirmed bookings · DP check</div>
+      <div style="font-size:13px; font-weight:600; margin-top:2px;">${noDp.length} booking${noDp.length === 1 ? '' : 's'} need a DP check${nNone ? ` · ${nNone} Belum DP` : ''}</div>
+      <div style="font-size:10.5px; color:var(--muted); margin-top:3px;">Tap “✓ DP via IG” when the DP proof arrives in Instagram DM. The booking then leaves this list, the choice is saved in Activity, and Google Calendar updates.</div></div>` +
+      noDp.map(a => `<div style="border-top:1px solid var(--hairline); padding:10px 0;">
+        <div class="row" style="justify-content:space-between;"><b style="font-weight:600; font-size:13px;">${esc(a.client_name||'Client')}</b><span class="tag" style="${a.dp_status === 'none' ? 'background:#B0566A; color:#fff;' : ''}">${a.dp_status === 'none' ? 'Belum DP' : 'Not checked'}</span></div>
+        ${apptLine(a)}${dpPickerHtml(a)}</div>`).join('');
+  }
   el.querySelectorAll('.bkProof').forEach(async box => {
     const { data } = await sb.storage.from(DP_BUCKET).createSignedUrl(box.dataset.proof, 3600);
     box.innerHTML = data ? `<a href="${data.signedUrl}" target="_blank"><img src="${data.signedUrl}" style="max-width:140px; max-height:180px; border-radius:10px; border:1px solid var(--hairline); display:block;"></a><div style="font-size:10px; color:var(--muted); margin-top:2px;">Tap to enlarge</div>` : '<span style="font-size:11px; color:#B0566A;">Could not load proof</span>';
@@ -2523,7 +2553,7 @@ function renderBkUpcoming(){
   const lim = new Date(); lim.setDate(lim.getDate() + 30); const limISO = lim.toISOString().slice(0,10);
   const list = APPTS.filter(a => a.status === 'confirmed' && a.appt_date <= limISO && (isOwnerOrAdmin || a.artist_id === currentUser.id));
   document.getElementById('bkUpList').innerHTML = list.length ? list.map(a => `<div style="border-top:1px solid var(--hairline); padding:8px 0;">
-    <div class="row" style="justify-content:space-between;"><b style="font-weight:600; font-size:12.5px;">${esc(a.client_name||'—')}</b><span style="display:flex; gap:12px; align-items:center;"><span class="tap" data-gcal="${a.id}" style="cursor:pointer; font-size:10.5px; text-decoration:underline;">📅 Google Calendar</span>${canManageAppt(a) ? `<span class="tap" data-bkcancel="${a.id}" style="cursor:pointer; font-size:10.5px; color:var(--muted); text-decoration:underline;">Cancel</span>` : ''}</span></div>${apptLine(a)}</div>`).join('')
+    <div class="row" style="justify-content:space-between;"><b style="font-weight:600; font-size:12.5px;">${esc(a.client_name||'—')}</b><span style="display:flex; gap:12px; align-items:center;">${canManageAppt(a) ? `<span class="tap" data-bkcancel="${a.id}" style="cursor:pointer; font-size:10.5px; color:var(--muted); text-decoration:underline;">Cancel</span>` : ''}</span></div>${apptLine(a)}${dpStatusHtml(a)}</div>`).join('')
     : '<div style="font-size:12px; color:var(--muted);">Nothing confirmed yet.</div>';
   const canc = APPTS.filter(a => a.status === 'cancelled' && a.cancelled_at && (isOwnerOrAdmin || a.artist_id === currentUser.id) && (Date.now() - new Date(a.cancelled_at)) < 14*864e5);
   if (canc.length) document.getElementById('bkUpList').innerHTML += `<div style="font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin:14px 0 4px;">Recently cancelled · slot open again</div>` + canc.map(a => `<div style="border-top:1px solid var(--hairline); padding:8px 0; opacity:.8;">
@@ -2583,6 +2613,15 @@ function bookAddFormHtml(){
     <div style="font-size:10.5px; color:var(--muted);">Services · duration is added up automatically</div>
     ${[['base','Treatment'],['removal','Removal'],['design','Design']].map(([g, gl]) => { const list = svcs.filter(s => (s.group||'base') === g); if (!list.length) return '';
       return `<div><div style="font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:2px 0 4px;">${gl}</div><div style="display:grid; grid-template-columns:1fr 1fr; gap:5px;">${list.map(s => `<label style="font-size:10.5px; line-height:1.25; padding:6px 7px; border:1px solid var(--hairline); border-radius:10px; display:flex; gap:5px; align-items:flex-start;"><input type="checkbox" class="bkfSvc" value="${s.key}" style="width:auto; margin:1px 0 0;"><span>${esc(s.en)}<span style="color:var(--muted);"> · ${s.min[tier]}m</span></span></label>`).join('')}</div></div>`; }).join('')}
+    <div style="font-size:10.5px; color:var(--muted);">DP status</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:5px;">
+      <label style="font-size:11.5px; font-weight:600; padding:9px; border:1px solid var(--hairline); border-radius:10px; display:flex; gap:6px; align-items:center;"><input type="radio" name="bkfDp" value="ig" style="width:auto; margin:0;">DP via IG</label>
+      <label style="font-size:11.5px; font-weight:600; padding:9px; border:1px solid var(--hairline); border-radius:10px; display:flex; gap:6px; align-items:center;"><input type="radio" name="bkfDp" value="none" style="width:auto; margin:0;">Belum DP</label>
+    </div>
+    <div style="display:flex; gap:14px; justify-content:center; font-size:10px; color:var(--muted);">
+      <label style="display:flex; gap:4px; align-items:center;"><input type="radio" name="bkfDp" value="website" style="width:auto; margin:0;">DP via website</label>
+      <label style="display:flex; gap:4px; align-items:center;"><input type="radio" name="bkfDp" value="personal" style="width:auto; margin:0;">DP paid personally</label>
+    </div>
     <textarea id="bkfNote" placeholder="Note (optional)" style="min-height:40px;"></textarea>
     <button class="btn-primary tap" id="bkfSave">Save booking</button></div>`;
 }
@@ -2890,6 +2929,8 @@ document.addEventListener('click', async e => {
     const p = { p_client: document.getElementById('bkfClient').value || null, p_artist: document.getElementById('bkSchArtist').value, p_date: document.getElementById('bkfDate').value,
       p_time: document.getElementById('bkfTime').value, p_services: [...document.querySelectorAll('.bkfSvc:checked')].map(x => x.value), p_note: document.getElementById('bkfNote').value.trim() || null, p_force: false };
     if (!p.p_client) return alert('Choose a client.');
+    const dpSel = (document.querySelector('input[name="bkfDp"]:checked') || {}).value;
+    if (!dpSel) return alert('Choose the DP status (DP via IG, Belum DP, DP via website or DP paid personally).');
     let r = await sb.rpc('ngd_team_book', p);
     if (r.error && /CONFLICT:/.test(r.error.message)){
       const why = r.error.message.split('CONFLICT:')[1];
@@ -2897,13 +2938,25 @@ document.addEventListener('click', async e => {
       r = await sb.rpc('ngd_team_book', { ...p, p_force: true });
     }
     if (r.error) return alert('Could not save: ' + r.error.message);
+    if (r.data){ const m = await sb.rpc('ngd_set_dp', { p_id: r.data, p_status: dpSel }); if (m.error) alert('Booking saved, but the DP status could not be saved: ' + m.error.message); }
     document.getElementById('bkAddForm').innerHTML = ''; renderBkMonth(); loadAppts(); reloadCal(); alert('Booking saved. It now shows in the schedule, the calendar and (if the client has an account) on their website.'); return;
   }
   const ok = e.target.closest('[data-bkok]');
-  if (ok){ if (!confirm('Approve this booking? The client will see it as confirmed.')) return;
-    const { error } = await sb.rpc('ngd_decide_booking', { p_id: ok.dataset.bkok, p_approve: true }); if (error) return alert(error.message); loadAppts(); renderBkMonth(); reloadCal(); return; }
+  if (ok){ const ap = APPTS.find(x => x.id === ok.dataset.bkok) || {};
+    let viaIg = false;
+    if (!ap.proof_path){
+      if (!confirm('There is no transfer proof on the website.\n\nHas the DP arrived via Instagram DM?\n\nOK = approve and record "DP received via IG"\nCancel = do not approve yet')) return;
+      viaIg = true;
+    } else if (!confirm('Approve this booking? The client will see it as confirmed.')) return;
+    const { error } = await sb.rpc('ngd_decide_booking', { p_id: ok.dataset.bkok, p_approve: true }); if (error) return alert(error.message);
+    if (viaIg){ const m = await sb.rpc('ngd_set_dp', { p_id: ok.dataset.bkok, p_status: 'ig' }); if (m.error) alert('Approved, but the DP status could not be saved: ' + m.error.message); }
+    loadAppts(); renderBkMonth(); reloadCal(); return; }
+  const dps = e.target.closest('[data-dpset]');
+  if (dps){ const [id, st] = dps.dataset.dpset.split('|'); const label = {ig:'DP via IG', none:'Belum DP', website:'DP via website', personal:'DP paid personally', '':'not checked (back to the DP check list)'}[st];
+    if (!confirm(`Set the DP status to “${label}”? Your name is saved in Activity.`)) return;
+    const { error } = await sb.rpc('ngd_set_dp', { p_id: id, p_status: st || null }); if (error) return alert(error.message); loadAppts(); return; }
   const no = e.target.closest('[data-bkno]');
-  if (no){ const reason = prompt('Reason for the client (e.g. DP amount does not match, please DM us):'); if (reason === null) return;
+  if (no){ const reason = prompt('Reason for the client — the client sees this on their booking page.\nKeep it short and polite, e.g. "DP belum kami terima, silakan DM kami di Instagram."'); if (reason === null) return;
     const { error } = await sb.rpc('ngd_decide_booking', { p_id: no.dataset.bkno, p_approve: false, p_reason: reason }); if (error) return alert(error.message); loadAppts(); renderBkDay(); return; }
   const cx = e.target.closest('[data-bkcancel]');
   if (cx){ const reason = prompt('Cancel this confirmed booking? Reason shown to the client (optional):'); if (reason === null) return;
