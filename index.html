@@ -206,6 +206,11 @@ pages.insertAdjacentHTML('beforeend', `
     <div style="font-size:10.5px; color:var(--muted); margin-top:3px;" id="homeLogHint"></div>
     <div id="homeLogList" style="margin-top:6px;"></div>
   </div>
+  <div class="card" id="redoCard" style="display:none;">
+    <div class="row" style="justify-content:space-between; align-items:center;"><div class="eyebrow">Tag when slots open</div><button class="pill tap" id="redoRefresh" style="font-size:10px; padding:4px 9px;">↻</button></div>
+    <div style="font-size:11px; color:var(--muted); margin-top:4px;">Clients who tapped "Remind me" for their next set. Tag them on Instagram when that month's schedule is posted, then tap Done.</div>
+    <div id="redoList" style="margin-top:8px;"></div>
+  </div>
   <div class="card">
     <div class="row" style="justify-content:space-between;">
       <div class="eyebrow" data-i18n="announcements">Announcements</div>
@@ -792,6 +797,33 @@ async function openWelcome(c, user, code){
   });
   paint();
 }
+
+// ---------- NEXT-SET REMINDERS (owner + admin) ----------
+window.loadRedo = async function(){
+  const card = document.getElementById('redoCard'); let role; try { role = currentUser && currentUser.role; } catch(_) { return; } if (!card || !['Owner','Admin'].includes(role)) return;
+  const { data, error } = await sb.from('ngd_redo_reminders').select('client_id, month, created_at').is('done_at', null).order('month').order('created_at');
+  if (error) return;
+  card.style.display = (data && data.length) ? '' : 'none';
+  const byM = {}; (data||[]).forEach(r => (byM[r.month] = byM[r.month] || []).push(r));
+  document.getElementById('redoList').innerHTML = Object.keys(byM).map(m => {
+    const rows = byM[m].map(r => ({ r, c: clients.find(x => x.id === r.client_id) || { name: 'Client' } }));
+    const label = new Date(m + 'T00:00:00').toLocaleDateString('en-GB', { month:'long', year:'numeric' });
+    const handles = rows.map(x => x.c.instagram ? '@' + String(x.c.instagram).replace(/^@+/, '') : null).filter(Boolean);
+    return `<div style="border-top:1px solid var(--hairline); padding:8px 0;">
+      <div class="row" style="justify-content:space-between; align-items:center;"><b style="font-weight:600; font-size:13px;">${label} · ${rows.length}</b>
+        <span class="row" style="gap:6px;"><button class="pill tap" data-redocopy="${esc(handles.join(' '))}" style="font-size:10.5px; padding:4px 9px;">Copy all @</button><button class="pill tap" data-redodone="${m}" style="font-size:10.5px; padding:4px 9px;">All tagged ✓</button></span></div>
+      ${rows.map(x => `<div class="row" style="justify-content:space-between; align-items:center; font-size:12px; padding:5px 0;"><span>${esc(x.c.name)} <span style="color:var(--muted);">${x.c.instagram ? '@' + esc(String(x.c.instagram).replace(/^@+/, '')) : 'no Instagram'}</span></span><button class="pill tap" data-redodone1="${x.r.client_id}|${m}" style="font-size:10px; padding:3px 8px;">Done</button></div>`).join('')}</div>`;
+  }).join('');
+};
+document.addEventListener('click', async e => {
+  if (e.target.id === 'redoRefresh') return loadRedo();
+  const cp = e.target.closest('[data-redocopy]'); if (cp) { try { await navigator.clipboard.writeText(cp.dataset.redocopy); cp.textContent = 'Copied ✓'; } catch(_) { prompt('Copy:', cp.dataset.redocopy); } return; }
+  const all = e.target.closest('[data-redodone]');
+  if (all) { if (!confirm('Mark everyone for this month as tagged?')) return; await sb.from('ngd_redo_reminders').update({ done_at: new Date().toISOString(), done_by: currentUser.id }).eq('month', all.dataset.redodone).is('done_at', null); return loadRedo(); }
+  const one = e.target.closest('[data-redodone1]');
+  if (one) { const [cid, m] = one.dataset.redodone1.split('|'); await sb.from('ngd_redo_reminders').update({ done_at: new Date().toISOString(), done_by: currentUser.id }).eq('client_id', cid).eq('month', m); return loadRedo(); }
+});
+setTimeout(() => window.loadRedo && loadRedo(), 1500);
 
 // ---------- PICK A GIFT (owner) ----------
 window.loadGifts = async function(){
@@ -2259,7 +2291,7 @@ if (currentUser.role === 'Owner'){
   const caLine = e => ({ open:'📱 opened the website', tab:`👀 looked at ${esc(CA_TAB[e.detail] || e.detail || 'a page')}`, booked:`📅 booked ${esc(e.detail||'')}`, dp_uploaded:'🧾 uploaded her DP proof',
     cancelled:`↩️ ${e.detail === 'reschedule' ? 'asked to reschedule' : 'cancelled'} a booking`, pin_set:'🔐 created her PIN (first login)', profile_saved:'✏️ updated her profile', photo:'🖼 added a profile photo',
     set_downloaded:"⬇️ downloaded her Today's Set", message:'💬 sent a message', love_note:'♡ wrote a love note', letter_opened:`✉️ opened the letter “${esc(e.detail||'')}”`, note_saved:'📝 saved her notes',
-    tick_requested:'✋ asked for a growth tick', gift_opened:`🎁 opened her gift: ${esc(e.detail||'')}`, feedback:'📮 sent feedback with her name — see Feedback', chat_reply:'💬 replied in chat', logout:'🚪 logged out' })[e.kind] || esc(e.kind);
+    tick_requested:'✋ asked for a growth tick', gift_opened:`🎁 opened her gift: ${esc(e.detail||'')}`, redo_remind:`⏰ asked to be reminded for ${esc(e.detail||'')} slots`, feedback:'📮 sent feedback with her name — see Feedback', chat_reply:'💬 replied in chat', logout:'🚪 logged out' })[e.kind] || esc(e.kind);
   function caRender(){
     const withLogin = CA_SUM.filter(c => c.has_login), opened = withLogin.filter(c => c.last_seen_at), notYet = withLogin.filter(c => !c.last_seen_at);
     const week = withLogin.filter(c => c.last_seen_at && Date.now() - new Date(c.last_seen_at) < 7 * 864e5).length;
@@ -2299,6 +2331,7 @@ document.getElementById('topnav').addEventListener('click', e => {
   if (b.dataset.key === 'clientact' && window.loadClientActivity) loadClientActivity();
   if (b.dataset.key === 'website' && window.loadGifts) loadGifts();
   if (b.dataset.key === 'finance' && window.loadFinance) loadFinance();
+  if (b.dataset.key === 'home' && window.loadRedo) loadRedo();
   if (b.dataset.key === 'treat') loadTreatments();
   if (b.dataset.key === 'knowledge') loadMaterials();
   if (b.dataset.key === 'admin' && window.loadStorage) loadStorage();
