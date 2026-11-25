@@ -2213,8 +2213,8 @@ if (isOwner){
     const { data } = await sb.rpc('ngd_team_activity', { p_limit: 150 });
     ACTIVITY = (data || []).filter(r => !(r.table_name === 'ngd_treatments' && r.action === 'UPDATE' && !treatLine(r)));
     document.getElementById('actList').innerHTML = ACTIVITY.map(r => `<div style="border-top:1px solid var(--hairline); padding:7px 0;">
-      <div style="font-size:12px;">${r.table_name === 'ngd_treatments' ? treatLine(r) : r.table_name === 'ngd_schedule' ? `${({CLOSE:'🚫',OPEN:'✅',BOOK:'📅',APPROVE:'✔️',REJECT:'✖️',CANCEL:'↩️',PROOF:'🧾'})[r.action]||'📅'} <b style="font-weight:600;">${esc(r.actor_name)}</b> ${esc(r.summary)}` : `<b style="font-weight:600;">${esc(r.actor_name)}</b> ${verb[r.action]||r.action} ${tableLabel[r.table_name]||r.table_name} <b style="font-weight:500;">${esc(nameOfRow(r))}</b>`}</div>
-      <div style="font-size:10px; color:var(--muted);">${new Date(r.created_at).toLocaleString('id-ID')}</div>${r.table_name === 'ngd_treatments' ? '' : diff(r)}</div>`).join('') || '<div style="font-size:12px; color:var(--muted);">Nothing yet.</div>';
+      <div style="font-size:12px;">${r.table_name === 'ngd_durations' ? `<b style="font-weight:600;">${esc(r.actor_name)}</b> ${esc(r.summary)}` : r.table_name === 'ngd_treatments' ? treatLine(r) : r.table_name === 'ngd_schedule' ? `${({CLOSE:'🚫',OPEN:'✅',BOOK:'📅',APPROVE:'✔️',REJECT:'✖️',CANCEL:'↩️',PROOF:'🧾'})[r.action]||'📅'} <b style="font-weight:600;">${esc(r.actor_name)}</b> ${esc(r.summary)}` : `<b style="font-weight:600;">${esc(r.actor_name)}</b> ${verb[r.action]||r.action} ${tableLabel[r.table_name]||r.table_name} <b style="font-weight:500;">${esc(nameOfRow(r))}</b>`}</div>
+      <div style="font-size:10px; color:var(--muted);">${new Date(r.created_at).toLocaleString('id-ID')}</div>${r.table_name === 'ngd_treatments' || r.table_name === 'ngd_durations' ? '' : diff(r)}</div>`).join('') || '<div style="font-size:12px; color:var(--muted);">Nothing yet.</div>';
   };
 }
 
@@ -3434,11 +3434,57 @@ async function openSetViewer(clientId, focusId){
 }
 document.addEventListener('click', e => { const b = e.target.closest('[data-viewsets]'); if (b){ e.stopPropagation(); openSetViewer(b.dataset.viewsets, b.dataset.viewset || null); } });
 
+// ---------- MONTHLY DURATION CHECK (each nail artist, last Monday of the month) ----------
+async function openDurationCheck(force){
+  const { data, error } = await sb.rpc('ngd_my_durations'); if (error || !data || !data.services) return;
+  if (!force && !data.due) return;
+  if (document.getElementById('durOv')) return;
+  const GL = { base:'Treatment', removal:'Removal', design:'Desain', extra:'Lainnya' };
+  const groups = ['base','removal','design','extra'].map(g => [g, data.services.filter(x => (x.group||'base') === g)]).filter(x => x[1].length);
+  const nextTxt = data.next_review ? new Date(data.next_review + 'T00:00:00').toLocaleDateString('id-ID', { weekday:'long', day:'numeric', month:'long' }) : '';
+  const ov = document.createElement('div'); ov.id = 'durOv';
+  ov.style.cssText = 'position:fixed; inset:0; background:rgba(17,17,17,.45); z-index:95; display:flex; align-items:flex-end; justify-content:center;';
+  ov.innerHTML = `<div style="background:var(--bg); width:100%; max-width:440px; max-height:92vh; overflow:auto; border-radius:22px 22px 0 0; padding:20px 18px 26px;">
+    <div class="eyebrow">Cek bulanan</div>
+    <div class="title" style="font-size:15px;">Durasi treatment kamu</div>
+    <div style="font-size:12px; margin-top:6px; line-height:1.5;">Apakah perkiraan waktu kamu untuk setiap treatment masih sama? Ubah angkanya kalau sekarang sudah lebih cepat atau lebih lama. Durasi ini dipakai untuk mengatur jadwal booking klien.</div>
+    ${groups.map(([g, list]) => `<div style="font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:14px 0 6px;">${GL[g]}</div>
+      ${list.map(x => `<div class="row" style="gap:8px; align-items:center; padding:4px 0; border-top:1px dotted var(--hairline);">
+        <span style="flex:1; font-size:12px;">${esc(x.id || x.en)}</span>
+        <input type="number" inputmode="numeric" min="5" max="600" step="5" data-durkey="${esc(x.key)}" data-orig="${x.min}" value="${x.min}" style="width:70px; text-align:center; padding:7px 4px; font-size:13px;">
+        <span style="font-size:11px; color:var(--muted); width:26px;">mnt</span></div>`).join('')}`).join('')}
+    <div id="durMsg" style="font-size:11px; color:var(--muted); margin-top:12px;"></div>
+    <div style="display:grid; gap:8px; margin-top:12px;">
+      <button class="btn-primary tap" id="durSave">Masih sama</button>
+      ${force ? '' : '<button class="btn-ghost tap" id="durLater" style="font-size:11.5px;">Nanti dulu</button>'}
+      ${force ? '<button class="btn-ghost tap" id="durLater" style="font-size:11.5px;">Tutup</button>' : ''}
+    </div>
+    ${nextTxt ? `<div style="font-size:10.5px; color:var(--muted); margin-top:10px; text-align:center;">Cek berikutnya: ${esc(nextTxt)}</div>` : ''}</div>`;
+  document.body.appendChild(ov);
+  const changed = () => [...ov.querySelectorAll('[data-durkey]')].filter(i => +i.value && +i.value !== +i.dataset.orig);
+  ov.addEventListener('input', () => {
+    ov.querySelectorAll('[data-durkey]').forEach(i => { i.style.outline = (+i.value && +i.value !== +i.dataset.orig) ? '2px solid var(--text)' : ''; });
+    const n = changed().length; ov.querySelector('#durSave').textContent = n ? `Simpan ${n} perubahan` : 'Masih sama';
+  });
+  ov.querySelector('#durLater').onclick = () => ov.remove();
+  ov.querySelector('#durSave').onclick = async () => {
+    const btn = ov.querySelector('#durSave'), p = {}; changed().forEach(i => { p[i.dataset.durkey] = +i.value; });
+    btn.disabled = true; btn.textContent = 'Menyimpan…';
+    const { data: n, error: e2 } = await sb.rpc('ngd_save_my_durations', { p });
+    if (e2){ btn.disabled = false; btn.textContent = 'Coba lagi'; ov.querySelector('#durMsg').textContent = e2.message; return; }
+    ov.remove(); alert(n ? `Tersimpan — ${n} durasi diperbarui dan tercatat di Activity.` : 'Terima kasih — durasi tetap sama.');
+    if (typeof loadBookCfg === 'function') loadBookCfg();
+  };
+}
+if (['Owner','Senior artist','Junior artist'].includes(currentUser.role)) setTimeout(() => openDurationCheck(false), 2500);
+document.addEventListener('click', e => { if (e.target.closest('[data-durcheck]')) openDurationCheck(true); });
+
 // ---------- MONTHLY EVALUATION (punctuality: on time vs late, + owner's note) ----------
 pages.insertAdjacentHTML('beforeend', `
 <div class="pagesec section-hidden" id="page-review">
   <div class="card"><div class="eyebrow" id="revEyebrow">Evaluasi bulanan</div><div class="title" id="revTitle">Ketepatan posting</div>
     <div class="row" style="gap:8px; margin-top:10px; align-items:center;"><input type="month" id="revMonth" style="width:auto; padding:5px 8px; font-size:12px;"><span style="font-size:10.5px; color:var(--muted); flex:1;" id="revRule"></span></div></div>
+  ${['Owner','Senior artist','Junior artist'].includes(currentUser.role) ? '<button class="btn-ghost tap" data-durcheck style="width:100%; margin-bottom:12px; font-size:11.5px;">Cek / ubah durasi treatment saya</button>' : ''}
   <div id="revList"></div>
 </div>`);
 (function(){
