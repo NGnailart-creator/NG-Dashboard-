@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
 <title>NG Nail Art Dashboard</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Abhaya+Libre:wght@400;500;600&family=Pinyon+Script&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Abhaya+Libre:wght@400;500;600&family=Pinyon+Script&family=IBM+Plex+Mono:wght@400;500&display=swap');
   * { box-sizing: border-box; }
   html,body{height:100%;margin:0;}
   ::-webkit-scrollbar{display:none;}
@@ -1476,6 +1476,7 @@ function clientExtrasHtml(c){
     <div style="font-size:11px; color:var(--muted); margin:10px 0 6px;">📌 Shared note — the whole team can see this</div>
     <textarea data-snote="${c.id}" placeholder="Shared note..." style="min-height:44px;">${esc(c.sharedNote)}</textarea>
     <button class="btn-primary tap" data-newtreat="${c.id}" style="width:100%; margin-top:10px;">+ Log treatment</button>
+    <button class="btn-ghost tap" data-viewsets="${c.id}" style="width:100%; margin-top:6px; font-size:11.5px;">👁 Lihat Today's Set yang dikirim</button>
     <button class="btn-ghost tap" data-bookfor="${c.id}" style="width:100%; margin-top:6px;">📅 Book an appointment for ${esc(c.name)}</button>`;
 }
 
@@ -1643,6 +1644,7 @@ function treatmentRowHtml(t){
     ${t.note ? `<div style="font-size:11px; color:var(--muted); margin-top:4px;">Note for client: ${esc(t.note)}</div>` : ''}
     ${canConfirm ? `<div class="row" style="gap:6px; margin-top:8px;"><button class="btn-primary tap" data-confirm="${t.id}" style="flex:1; font-size:11px; padding:7px;">✓ Confirm price</button></div>` : ''}
     ${canEditTreat(t) ? `<div class="row" style="gap:6px; margin-top:8px;"><button class="btn-ghost tap" data-edittreat="${t.id}" style="flex:1; font-size:11px; padding:7px;">✎ Edit</button><button class="btn-ghost tap" data-deltreat="${t.id}" style="flex:1; font-size:11px; padding:7px; color:#8A2D1F;">🗑 Delete</button></div>` : ''}
+    ${(SETS_BY_T[t.id]||[]).length ? `<button class="btn-ghost tap" data-viewsets="${t.client_id}" data-viewset="${(SETS_BY_T[t.id]||[])[0].id}" style="width:100%; margin-top:8px; font-size:11px; padding:7px;">👁 Lihat Today's Set yang dikirim</button>` : ''}
     ${(isOwner || currentUser.role === 'Admin' || t.created_by === currentUser.id || t.artist_id === currentUser.id) ? `<button class="btn-ghost tap" data-mkset="${t.id}" style="width:100%; margin-top:8px; font-size:11px; padding:7px;">📸 Today's Set${(SETS_BY_T[t.id]||[]).some(x => x.status==='sent' && new Date(x.expires_at) > new Date()) ? ' · sent ✓' : ''}</button>` : ''}
   </div>`;
 }
@@ -3313,6 +3315,76 @@ function tidyUI(root){
   new MutationObserver(() => { if (tidyQueued) return; tidyQueued = true; requestAnimationFrame(() => { tidyQueued = false; tidyUI(document.body); }); })
     .observe(document.body, { childList:true, subtree:true });
   tidyUI(document.body); }
+
+// ---------- VIEW SENT TODAY'S SETS (same receipt template the client sees) ----------
+(function(){ const st = document.createElement('style'); st.textContent = `.ngv-story{--paper:#faf8f4;--wall:#e7e3de;--pin:#e2a6ad;--ink2:#1b1b1b;--faint:#8a8580;width:100%;max-width:360px;aspect-ratio:9/16;margin:10px auto 0;background:var(--wall);display:flex;align-items:center;justify-content:center;border-radius:6px;overflow:hidden}
+.ngv-rcp{width:72%;background:var(--paper);color:var(--ink2);font-size:9.5px;letter-spacing:.06em;padding:26px 16px 26px;position:relative;transform:rotate(-1deg);box-shadow:0 1px 1px rgba(0,0,0,.04),6px 14px 24px rgba(0,0,0,.10);
+ clip-path:polygon(0 0,100% 0,100% calc(100% - 9px),96% 100%,91% calc(100% - 6px),86% 100%,80% calc(100% - 8px),74% 100%,69% calc(100% - 5px),63% 100%,57% calc(100% - 7px),51% 100%,45% calc(100% - 5px),39% 100%,33% calc(100% - 8px),27% 100%,21% calc(100% - 5px),15% 100%,9% calc(100% - 7px),4% 100%,0 calc(100% - 6px))}
+.ngv-rcp.mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+.ngv-rcp.sans{font-family:Montserrat,sans-serif;font-weight:300;letter-spacing:.12em;font-size:9px}
+.ngv-rcp .pinx{position:absolute;top:7px;left:50%;width:13px;height:13px;margin-left:-6.5px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff8,var(--pin) 55%);z-index:1}
+.ngv-rcp .pinsh{position:absolute;top:9px;left:50%;width:18px;height:18px;margin-left:-7px;border-radius:50%;background:radial-gradient(circle,rgba(0,0,0,.16) 0,rgba(0,0,0,.07) 45%,rgba(0,0,0,0) 70%)}
+.ngv-rcp .br{text-align:center;letter-spacing:.32em;font-size:10.5px;margin-top:4px}
+.ngv-rcp .ds{text-align:center;color:var(--faint);letter-spacing:0;overflow:hidden;white-space:nowrap;font-size:9px;margin:3px 0;opacity:.85}
+.ngv-rcp .tt{text-align:center;font-size:10.5px;letter-spacing:.14em}
+.ngv-rcp .ph{display:grid;gap:3px;margin:6px 0}
+.ngv-rcp .ph .pc{overflow:hidden;clip-path:inset(0);position:relative;background:#eee;min-height:0}.ngv-rcp .ph img{width:100%;height:100%;object-fit:cover;display:block}
+.ngv-rcp .g1{aspect-ratio:4/4.4}.ngv-rcp .g2{grid-template-columns:1fr 1fr;aspect-ratio:4/3.3}.ngv-rcp .g3{grid-template-columns:1.3fr 1fr;grid-template-rows:1fr 1fr;aspect-ratio:4/3.6}.ngv-rcp .g3 .pc:first-child{grid-row:1/3}
+.ngv-rcp .it{display:flex;justify-content:space-between;gap:8px;padding:1.5px 0;line-height:1.5}
+.ngv-rcp .it span:last-child{white-space:nowrap}
+.ngv-rcp .bg{font-size:11px;font-weight:500}
+.ngv-rcp .sm{text-align:center;line-height:1.6;margin-top:5px}
+.ngv-rcp .fx{color:var(--faint);font-size:8.5px}
+.ngv-rcp .bar{height:20px;margin:9px 14px 3px;background:repeating-linear-gradient(90deg,var(--ink2) 0 2px,transparent 2px 4px,var(--ink2) 4px 5px,transparent 5px 8px,var(--ink2) 8px 11px,transparent 11px 13px);opacity:.85}
+.ngv-rcp [contenteditable]{outline:none}
+.ngv-rcp [contenteditable]:focus{background:rgba(0,0,0,.05)}
+
+.ngv-rcp .ph .pc.empty{display:flex; align-items:center; justify-content:center; color:#9a948e; font-size:8.5px; text-align:center; padding:6px; letter-spacing:.04em;}`; document.head.appendChild(st); })();
+const ngvK = n => { n = +n||0; if (n >= 1000){ const k = n/1000; return (Number.isInteger(k) ? k : k.toFixed(1)) + 'K'; } return String(n); };
+function ngvReceipt(x, urls){
+  const rc = x.receipt || {}, D = '============================', d = '----------------------------';
+  const n = Math.max(1, Math.min(3, (x.photos||[]).length || 1));
+  const ph = (x.photos||[]).length ? (x.photos||[]).slice(0,3).map(p => `<div class="pc"><img src="${esc(urls[p]||'')}" alt=""></div>`).join('')
+    : `<div class="pc empty">${currentLang === 'id' ? 'Foto sudah dihapus otomatis (lebih dari 7 hari)' : 'Photos were deleted automatically after 7 days'}</div>`;
+  const items = (rc.items||[]).map(i => `<div class="it"><span>${esc(String(i.label||'').toUpperCase())}${i.qty > 1 ? ' × ' + i.qty : ''}</span><span>${ngvK(i.amount)}</span></div>`).join('');
+  const disc = rc.discount_amount ? `<div class="it"><span>${esc(String(rc.discount_label||'DISCOUNT').toUpperCase())}</span><span>-${ngvK(rc.discount_amount)}</span></div>` : '';
+  const title = x.title && !(rc.items||[]).some(i => String(i.label||'').trim().toUpperCase() === x.title.trim().toUpperCase()) ? `<div class="it"><span>${esc(x.title.toUpperCase())}</span><span></span></div>` : '';
+  const dt = rc.date ? new Date(rc.date + 'T00:00:00').toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }).toUpperCase() : '';
+  return `<div class="ngv-story"><div class="ngv-rcp mono"><div class="pinsh"></div><div class="pinx"></div><div class="br">NG NAILART</div><div class="ds">${D}</div><div class="tt">TODAY'S SET</div><div class="ds">${D}</div>
+    <div class="ph g${n}">${ph}</div><div class="ds">${d}</div>${title}${items}${disc}
+    <div class="ds">${d}</div><div class="it bg"><span>TOTAL</span><span>${ngvK(rc.total)}</span></div><div class="ds">${d}</div>
+    <div class="it"><span>NAIL ARTIST: ${esc(String(rc.artist||'').toUpperCase())}</span><span></span></div>
+    <div class="it"><span>${esc(dt)}</span><span>VISIT ${rc.visit||''}</span></div>
+    <div class="it"><span>LOYALTY STAMP</span><span>${rc.stamp||''} / 10 ♡</span></div>
+    <div class="ds">${d}</div><div class="sm">THANK YOU FOR VISITING<br>NG NAILART</div><div class="bar"></div><div class="sm fx">@NATASYAGISHELLE.NAILART</div></div></div>`;
+}
+async function openSetViewer(clientId, focusId){
+  const c = clients.find(x => x.id === clientId) || { name:'Client' }, idl = currentLang === 'id';
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed; inset:0; background:rgba(17,17,17,.45); z-index:85; display:flex; align-items:flex-end; justify-content:center;';
+  ov.innerHTML = `<div style="background:var(--bg); width:100%; max-width:440px; max-height:92vh; overflow:auto; border-radius:22px 22px 0 0; padding:18px 16px 26px;">
+    <div class="row" style="justify-content:space-between;"><div><div class="eyebrow">Today's Set</div><div class="title" style="font-size:13px;">${esc(c.name)}</div></div><span class="tap" data-x style="cursor:pointer; font-size:18px;">✕</span></div>
+    <div id="ngvBody" style="margin-top:10px; font-size:12px; color:var(--muted);">…</div></div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('[data-x]')) ov.remove(); });
+  const { data, error } = await sb.from('ngd_sets').select('*').eq('client_id', clientId).not('sent_at', 'is', null).order('sent_at', { ascending:false }).limit(20);
+  const body = ov.querySelector('#ngvBody');
+  if (error){ body.textContent = error.message; return; }
+  if (!(data||[]).length){ body.textContent = idl ? 'Belum ada Today\'s Set yang dikirim ke klien ini.' : "No Today's Set has been sent to this client yet."; return; }
+  const paths = data.flatMap(x => x.photos || []), urls = {};
+  if (paths.length){ const r = await sb.storage.from(SET_BUCKET).createSignedUrls(paths, 900); (r.data||[]).forEach(u => { if (u.signedUrl) urls[u.path] = u.signedUrl; }); }
+  const when = v => new Date(v).toLocaleString(idl ? 'id-ID' : 'en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+  body.innerHTML = data.map(x => { const live = x.status === 'sent' && new Date(x.expires_at) > new Date();
+    return `<div data-ngvset="${x.id}" style="border-top:1px solid var(--hairline); padding:12px 0 14px;">
+      <div style="font-size:12.5px; color:var(--text); font-weight:600;">${esc(x.title || (x.receipt||{}).items?.[0]?.label || "Today's Set")}</div>
+      <div style="font-size:11px; color:var(--muted); margin-top:2px; line-height:1.5;">${idl ? 'Dikirim' : 'Sent'} ${when(x.sent_at)}${(x.receipt||{}).artist ? ' · ' + esc(x.receipt.artist) : ''}<br>
+        ${x.seen_at ? (idl ? `👀 Sudah dilihat klien ${when(x.seen_at)}` : `👀 Seen by the client ${when(x.seen_at)}`) : (idl ? '🙈 Belum dibuka klien' : '🙈 Not opened yet')}
+        · ⬇️ ${x.downloads||0}× ${idl ? 'diunduh' : 'downloaded'}
+        · ${live ? (idl ? `foto tersedia sampai ${when(x.expires_at)}` : `photos until ${when(x.expires_at)}`) : (idl ? 'foto sudah kedaluwarsa' : 'photos expired')}</div>
+      ${ngvReceipt(x, urls)}</div>`; }).join('');
+  if (focusId){ const el = body.querySelector(`[data-ngvset="${focusId}"]`); if (el) el.scrollIntoView({ block:'start' }); }
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-viewsets]'); if (b){ e.stopPropagation(); openSetViewer(b.dataset.viewsets, b.dataset.viewset || null); } });
 
 // ---------- MONTHLY EVALUATION (punctuality: on time vs late, + owner's note) ----------
 pages.insertAdjacentHTML('beforeend', `
