@@ -3221,7 +3221,7 @@ async function loadHomeLog(){
       : (idl ? `⏳ ${todo.length} treatment belum diposting` : `⏳ ${todo.length} treatment${todo.length === 1 ? '' : 's'} not posted yet`);
     document.getElementById('homeLogHint').textContent = lateN
       ? (idl ? 'Klien sudah menunggu rincian harga dan foto nail art-nya 🥺 Mohon selesaikan sekarang, sebelum mengerjakan hal lain.' : 'Your clients are waiting for their price details and nail art photos 🥺 Please finish these now, before anything else.')
-      : (idl ? 'Masukkan rincian harga dan kirim foto ke klien hari ini ya 💅' : 'Add the price details and send the photos to your client today 💅');
+      : (idl ? 'Masukkan rincian harga dan kirim foto ke klien hari ini ya' : 'Add the price details and send the photos to your client today');
     document.getElementById('homeLogList').innerHTML = todo.map(i => {
       const late = i.date < t, n = daysLate(i.date);
       const missing = i.need === 'log' ? (idl ? 'Rincian harga & foto belum diisi' : 'Price details & photos missing') : (idl ? 'Harga sudah diisi · foto belum dikirim ke klien' : 'Price done · photos not sent to the client yet');
