@@ -1638,7 +1638,7 @@ function treatmentRowHtml(t){
     <div style="font-size:10.5px; color:var(--muted); margin-bottom:4px;">${t.order_type === 'press_on' ? '📦 Press-on order · ' : ''}${t.treatment_date} · ${esc(t.artist_name||'')}</div>
     ${items}
     ${t.discount_amount ? `<div class="row" style="justify-content:space-between; font-size:12px; color:#B0566A;"><span>${esc(t.discount_label||'Discount')}</span><span>−${rupiah(t.discount_amount)}</span></div>` : ''}
-    ${t.voucher_amount ? `<div class="row" style="justify-content:space-between; font-size:12px; color:#B0566A;"><span>🎁 ${esc(t.voucher_label||'Voucher')} <span style="color:var(--muted); font-size:10.5px;">(studio)</span></span><span>−${rupiah(t.voucher_amount)}</span></div>` : ''}
+    ${t.voucher_amount ? `<div class="row" style="justify-content:space-between; font-size:12px; color:#B0566A;"><span>${esc(t.voucher_label||'Voucher')} <span style="color:var(--muted); font-size:10.5px;">(studio)</span></span><span>−${rupiah(t.voucher_amount)}</span></div>` : ''}
     ${t.coupon_id ? `<div style="font-size:11px; color:#B0566A;">🏷️ Coupon applied</div>` : ''}
     <div class="row" style="justify-content:space-between; font-size:12.5px; font-weight:600; border-top:1px solid var(--text); margin-top:4px; padding-top:4px;"><span>Total</span><span>Rp ${rupiah(t.total)}</span></div>
     ${t.tip ? `<div class="row" style="justify-content:space-between; font-size:11.5px; color:var(--muted);"><span>Tip for ${esc(t.artist_name||'the nail artist')}</span><span>Rp ${rupiah(t.tip)}</span></div>` : ''}
@@ -1700,7 +1700,7 @@ function openTreatmentForm(clientId, editT){
         <input id="tfVLabel" placeholder="Voucher / gift name (studio pays)" style="flex:2;" />
         <input id="tfVAmt" type="number" inputmode="numeric" placeholder="Voucher Rp" style="flex:1;" />
       </div>
-      <div style="font-size:10.5px; color:var(--muted); margin-top:-2px;">🎁 Voucher, gift card &amp; kupon ditanggung studio — tidak memotong fee nail artist. Diskon loyalty di atas ditanggung nail artist.</div>
+      <div style="font-size:10.5px; color:var(--muted); margin-top:-2px;">Voucher, gift card &amp; kupon ditanggung studio — tidak memotong fee nail artist. Diskon loyalty di atas ditanggung nail artist.</div>
       <input id="tfTip" type="number" inputmode="numeric" placeholder="Tip Rp (optional — 100% to the nail artist)" />
       <textarea id="tfNote" placeholder="Note the client will see (color, shape, design…)" style="min-height:44px;"></textarea>
       <div class="row" style="justify-content:space-between; font-weight:600;"><span>Total</span><span id="tfTotal">Rp 0</span></div>
@@ -1763,18 +1763,24 @@ function openTreatmentForm(clientId, editT){
     let type = /\/(nail|finger|kuku|jari)/i.test(pr) ? 'nail' : /\/pcs/i.test(pr) ? 'pcs' : hit ? 'flat' : '';
     if (type === 'flat' && (r.dataset.perjari === '1' || (qty > 1 && unit && unit < parsePrice(pr)))){ type = 'finger'; r.dataset.perjari = '1'; }
     const tot = 'Rp ' + rupiah(qty * unit);
-    cap.innerHTML = type === 'finger' ? `💅 Dihitung <b>per jari</b> · ${qty} jari × Rp ${rupiah(unit)} = <b>${tot}</b> · <u data-tfper="0" style="cursor:pointer;">kembali ke harga semua kuku</u>`
-      : type === 'nail' ? `💅 Harga <b>per kuku</b> · ${qty} kuku × Rp ${rupiah(unit)} = <b>${tot}</b>`
-      : type === 'pcs' ? `✨ Harga <b>per pcs</b> · ${qty} pcs × Rp ${rupiah(unit)} = <b>${tot}</b>`
-      : type === 'flat' ? `🖐️ Harga <b>sekali untuk semua kuku</b> (bukan per kuku)${qty > 1 ? ` · ${qty}× = <b>${tot}</b>` : ` = <b>${tot}</b>`} · <u data-tfper="1" style="cursor:pointer;">hitung per jari</u>`
+    cap.innerHTML = type === 'finger' ? `Dihitung <b>per jari</b> · ${qty} jari × Rp ${rupiah(unit)} = <b>${tot}</b> · <u data-tfper="0" style="cursor:pointer;">kembali ke harga semua kuku</u>`
+      : type === 'nail' ? `Harga <b>per kuku</b> · ${qty} kuku × Rp ${rupiah(unit)} = <b>${tot}</b>`
+      : type === 'pcs' ? `Harga <b>per pcs</b> · ${qty} pcs × Rp ${rupiah(unit)} = <b>${tot}</b>`
+      : type === 'flat' ? `Harga <b>sekali untuk semua kuku</b> (bukan per kuku)${qty > 1 ? ` · ${qty}× = <b>${tot}</b>` : ` = <b>${tot}</b>`} · <u data-tfper="1" style="cursor:pointer;">hitung per jari</u>`
       : `${qty} × Rp ${rupiah(unit)} = <b>${tot}</b>`;
   };
   const recalc = () => {
     rows.querySelectorAll('.tfRow').forEach(capRow);
     let sum = 0;
     rows.querySelectorAll('.tfRow').forEach(r => { sum += (+r.querySelector('.tfQty').value||0) * (+r.querySelector('.tfUnit').value||0); });
+    const va = document.getElementById('tfVAmt');
+    if (va && va.dataset.auto){ try { const R = JSON.parse(va.dataset.auto); let v = 0;
+      if (R.pct) v = Math.round(sum * R.pct / 100);
+      else if (R.rp) v = R.rp;
+      else if (R.nails){ let best = 0; rows.querySelectorAll('.tfRow').forEach(r => { const l = r.querySelector('.tfLabel').value.toLowerCase(); if (R.words.some(w => w && l.includes(w))) best = Math.max(best, +r.querySelector('.tfUnit').value || 0); }); v = best * R.nails; }
+      va.value = v ? Math.min(v, sum) : ''; } catch(_){} }
     sum -= +document.getElementById('tfDisc').value || 0;
-    sum -= +((document.getElementById('tfVAmt')||{}).value) || 0;
+    sum -= +((va||{}).value) || 0;
     document.getElementById('tfTotal').textContent = 'Rp ' + rupiah(Math.max(sum,0));
     return Math.max(sum,0);
   };
@@ -1825,6 +1831,7 @@ function openTreatmentForm(clientId, editT){
   document.getElementById('tfClient').onchange = refreshList;
   document.getElementById('tfDate').onchange = () => { if (!window._tfEdit) refreshList(); };
   box.addEventListener('input', e => {
+    if (e.target.id === 'tfVAmt') delete e.target.dataset.auto;
     if (e.target.classList.contains('tfLabel')){
       const hit = (window._tfSheet||[]).find(s => s.label === e.target.value);
       if (hit){ e.target.closest('.tfRow').querySelector('.tfUnit').value = parsePrice(hit.price); }
@@ -1866,8 +1873,14 @@ function openTreatmentForm(clientId, editT){
       const who = (clients.find(c => c.id === data.client_id)||{}).name || '—';
       const expired = data.expires_on && data.expires_on < todayISO();
       info.innerHTML = data.status !== 'active' ? `❌ Already ${esc(data.status)}` : expired ? `❌ Expired on ${esc(data.expires_on)}`
-        : `✓ <b>${esc(data.title_en||'Coupon')}</b>${data.value_text ? ' — ' + esc(data.value_text) : ''} · for ${esc(who)}. It is marked as used when you save. Isi nilainya di kolom <b>Voucher Rp</b> (ditanggung studio).`;
-      if (data.status === 'active' && !expired){ const vl = document.getElementById('tfVLabel'); if (vl && !vl.value) vl.value = (data.title_en || 'Voucher') + (data.value_text ? ' – ' + data.value_text : ''); }
+        : `✓ <b>${esc(data.title_en||'Coupon')}</b>${data.value_text ? ' — ' + esc(data.value_text) : ''} · for ${esc(who)}. Dipakai saat disimpan. Nilainya otomatis terisi di kolom Voucher (bisa diubah).`;
+      if (data.status === 'active' && !expired){
+        const vl = document.getElementById('tfVLabel'), va = document.getElementById('tfVAmt'), v = String(data.value_text || '');
+        vl.value = (data.title_en || 'Voucher').replace(/^Pick a gift:\s*/i, '').replace(/\.$/, '');
+        const pct = /(\d+(?:[.,]\d+)?)\s*%/.exec(v), rp = /rp\s*([\d.]+)/i.exec(v), nails = /\((\d+)\s*nails?\)/i.exec(v);
+        va.dataset.auto = JSON.stringify(pct ? { pct: +pct[1].replace(',', '.') } : rp ? { rp: +rp[1].replace(/\./g, '') } : nails ? { nails: +nails[1], words: v.toLowerCase().replace(/\(.*\)/, '').replace(/^free\s*/, '').split('/').map(w => w.trim()).filter(Boolean) } : { none: 1 });
+        recalc();
+      }
     }, 350);
   });
   document.getElementById('tfSave').onclick = async () => {
@@ -2270,7 +2283,7 @@ if (['Owner','Admin','Senior artist','Junior artist'].includes(currentUser.role)
       <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">${a.count} treatment${a.count===1?'':'s'} · ${a.clients} client${a.clients===1?'':'s'}</div>
       <div style="font-size:12px; margin-top:6px;">
         <div class="row" style="justify-content:space-between; padding:2px 0;"><span>Service value</span><span>Rp ${rupiah(a.gross)}</span></div>
-        ${a.discounts ? `<div class="row" style="justify-content:space-between; padding:2px 0; color:var(--muted);"><span>🎁 Voucher, gift &amp; birthday (studio pays — tidak memotong fee)</span><span>Rp ${rupiah(a.discounts)}</span></div>` : ''}
+        ${a.discounts ? `<div class="row" style="justify-content:space-between; padding:2px 0; color:var(--muted);"><span>Voucher, gift &amp; birthday (studio pays — tidak memotong fee)</span><span>Rp ${rupiah(a.discounts)}</span></div>` : ''}
         ${a.discounts_artist ? `<div class="row" style="justify-content:space-between; padding:2px 0; color:var(--muted);"><span>Loyalty discounts (${esc(a.name)} carries)</span><span>− Rp ${rupiah(a.discounts_artist)}</span></div>` : ''}
         <div class="row" style="justify-content:space-between; padding:2px 0;"><span>Clients paid</span><span>Rp ${rupiah(a.revenue)}</span></div>
         ${a.role === 'Owner' ? '' : `
