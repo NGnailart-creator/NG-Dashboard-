@@ -444,11 +444,11 @@ pages.insertAdjacentHTML('beforeend', `
     <div class="eyebrow" data-i18n="thisWeek">This week</div>
     <div class="title" data-i18n="bookings">Bookings</div>
   </div>
-  <div class="row" style="gap:8px; margin-bottom:4px;">
+  <div class="row" style="display:none; gap:8px; margin-bottom:4px;">
     <button class="pill active tap" id="calTeamBtn" style="flex:1; text-align:center;" data-i18n="teamCalendar">Group calendar</button>
     <button class="pill tap" id="calMineBtn" style="flex:1; text-align:center;" data-i18n="privateCalendar">Personal calendar</button>
   </div>
-  <div class="card" style="padding:10px 12px;">
+  <div class="card" style="display:none; padding:10px 12px;">
     <div style="font-size:11px; color:var(--muted); margin-bottom:6px;" data-i18n="showScheduleFor">Show schedule for:</div>
     <select id="calWhoFilter" style="font-size:12.5px;">
       <option value="everyone">Everyone's schedule</option>
@@ -458,7 +458,7 @@ pages.insertAdjacentHTML('beforeend', `
       <option value="Falah">Falah — theirs only</option>
     </select>
   </div>
-  <div class="card" style="background:linear-gradient(160deg, var(--tint) 0%, var(--surface) 140%);">
+  <div class="card" style="display:none; background:linear-gradient(160deg, var(--tint) 0%, var(--surface) 140%);">
     <div class="row" style="justify-content:space-between; margin-bottom:10px;">
       <span class="tap" id="calPrev" style="cursor:pointer; color:var(--accent); font-size:18px; padding:4px 8px;">‹</span>
       <div id="calMonthLabel" style="font-family:Montserrat,sans-serif; font-size:16px; font-weight:600;">🗓️ September 2026</div>
@@ -469,15 +469,16 @@ pages.insertAdjacentHTML('beforeend', `
     </div>
     <div id="calGrid" style="display:grid; grid-template-columns:repeat(7,1fr); gap:5px;"></div>
   </div>
-  <div class="card" id="calDayCard"></div>
-  <div class="card" id="calBusyCard"></div>
-  <div class="card" id="calTeamOnlyNote">
+  <div class="card" id="calDayCard" style="display:none;"></div>
+  <div class="card" id="calBusyCard" style="display:none;"></div>
+  <div class="card" id="calTeamOnlyNote" style="display:none;">
     <div style="font-size:11.5px; color:var(--muted);">Group calendar: everyone can view, only owner and admin can add or edit. Personal calendar: private to each person, for their own reminders. Tap any date above to see or add to that day.</div>
   </div>
   <div class="card">
-    <div style="font-weight:600; font-size:13px; margin-bottom:6px;">Google Calendar</div>
-    <div style="font-size:11.5px; color:var(--muted); line-height:1.5;">Bookings sync to Google Calendar automatically. Each nail artist has her own calendar (“NG – name”); the admin and owner see all of them. Confirmed bookings and slots closed for a client appear by themselves, move when rescheduled and disappear when cancelled. The event also shows the DP status.<br><br>Make changes here in the dashboard, not in Google Calendar.</div>
-    <div class="row" style="gap:6px; margin-top:10px;"><button class="btn-primary tap" style="flex:1;" onclick="(document.getElementById('bkReqCard')||document.body).scrollIntoView({behavior:'smooth'})">See booking requests</button><a class="btn-ghost tap" style="flex:1; text-align:center; text-decoration:none;" href="https://calendar.google.com/calendar/r" target="_blank" rel="noopener">Open Google Calendar</a></div>
+    <div class="row" style="justify-content:space-between; align-items:center; gap:10px;">
+      <div style="font-size:11.5px; color:var(--muted); line-height:1.45;"><b style="color:var(--text); font-weight:600;">Google Calendar</b> · bookings sync automatically to each artist's “NG – name” calendar. Edit bookings here, not there.</div>
+      <a class="btn-ghost tap" style="flex:none; font-size:11px; padding:7px 10px; text-decoration:none;" href="https://calendar.google.com/calendar/r" target="_blank" rel="noopener">Open</a>
+    </div>
   </div>
 </div>`);
 
