@@ -3367,7 +3367,7 @@ async function openSetViewer(clientId, focusId){
     <div id="ngvBody" style="margin-top:10px; font-size:12px; color:var(--muted);">…</div></div>`;
   document.body.appendChild(ov);
   ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('[data-x]')) ov.remove(); });
-  const { data, error } = await sb.from('ngd_sets').select('*').eq('client_id', clientId).not('sent_at', 'is', null).order('sent_at', { ascending:false }).limit(20);
+  const { data, error } = await sb.rpc('ngd_staff_client_sets', { p_client: clientId }); // receipt with the live visit / stamp
   const body = ov.querySelector('#ngvBody');
   if (error){ body.textContent = error.message; return; }
   if (!(data||[]).length){ body.textContent = idl ? 'Belum ada Today\'s Set yang dikirim ke klien ini.' : "No Today's Set has been sent to this client yet."; return; }
