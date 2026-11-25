@@ -1652,12 +1652,14 @@ async function loadTreatments(){
   const mineOnly = !(isOwner || currentUser.role === 'Admin');
   const vis = mineOnly ? TREATMENTS.filter(t => t.artist_id === currentUser.id || t.created_by === currentUser.id) : TREATMENTS;
   const pend = vis.filter(t => t.status === 'pending'), done = vis.filter(t => t.status === 'confirmed').slice(0, 20);
+  keepScroll(() => {
   document.getElementById('treatPending').innerHTML = pend.length ? pend.map(treatmentRowHtml).join('') : '<div style="font-size:12px; color:var(--muted);">Nothing waiting.</div>';
   document.getElementById('treatDone').innerHTML = done.length ? done.map(treatmentRowHtml).join('') : '<div style="font-size:12px; color:var(--muted);">No confirmed treatments yet.</div>';
+  });
 }
 async function reloadClients(){
   const { data } = await sb.from('ngd_clients').select('*').order('created_at');
-  clients = (data||[]).map(mapClientRow); renderClients(document.getElementById('clientSearch').value);
+  clients = (data||[]).map(mapClientRow); keepScroll(() => renderClients(document.getElementById('clientSearch').value));
 }
 
 function openTreatmentForm(clientId, editT){
@@ -2547,13 +2549,13 @@ async function reloadCal(){
   CAL_BOOKINGS = {};
   (data||[]).forEach(b => { const d = new Date(b.booking_date + 'T00:00:00'), key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
     (CAL_BOOKINGS[key] = CAL_BOOKINGS[key] || []).push({ id:b.id, client:b.client_name, artist:b.artist, time:b.booking_time, service:b.service, status:b.status, group:b.is_group, people:b.people||[] }); });
-  try { renderCalGrid(); showCalDay(); } catch(_) {}
+  try { keepScroll(() => { renderCalGrid(); showCalDay(); }); } catch(_) {}
 }
 async function loadAppts(){
   const { data } = await sb.from('ngd_appointments').select('*').gte('appt_date', todayISO()).order('appt_date').order('start_min');
   const now = new Date();
   APPTS = (data||[]).map(a => (a.status === 'awaiting_dp' && a.hold_until && new Date(a.hold_until) <= now) ? {...a, status:'expired'} : a);
-  renderBkRequests(); renderBkUpcoming(); if (document.getElementById('homeGreet')) renderHome();
+  keepScroll(() => { renderBkRequests(); renderBkUpcoming(); if (document.getElementById('homeGreet')) renderHome(); });
   const pend = APPTS.filter(a => canManageAppt(a) && (a.status === 'awaiting_approval' || a.status === 'awaiting_dp')).length;
   const nb = document.querySelector('.navbtn[data-key="calendar"]');
   if (nb){ let d = nb.querySelector('.navdot'); if (pend && !d){ nb.insertAdjacentHTML('beforeend', '<span class="navdot" style="position:absolute; top:6px; right:10px; width:7px; height:7px; border-radius:50%; background:#B0566A;"></span>'); nb.style.position='relative'; } if (!pend && d) d.remove(); }
@@ -2610,6 +2612,9 @@ function renderBkUpcoming(){
 let BK_MONTH = (() => { const d = new Date(); return {y:d.getFullYear(), m:d.getMonth()}; })();
 const bkArtistName = () => (people.find(p => p.id === document.getElementById('bkSchArtist').value) || {}).name || '';
 async function renderBkDay(){ return renderBkMonth(); }
+// Keep the page where it was when lists are redrawn (schedule, requests, calendar)
+function keepScroll(fn){ const y = window.scrollY; const r = fn(); const back = () => { if (Math.abs(window.scrollY - y) > 2) window.scrollTo(0, y); }; back(); requestAnimationFrame(back); return r; }
+let BK_FORM_Y = null;
 let BK_MDATA = [], BK_EDIT = false, BK_PEND = new Map();
 const canBulkEdit = () => { const a = document.getElementById('bkSchArtist').value; return isOwner || (a === currentUser.id && ['Senior artist','Junior artist'].includes(currentUser.role)); };
 function bkEditBar(){
@@ -2631,7 +2636,8 @@ async function renderBkMonth(){
   if (error){ box.innerHTML = `<div style="font-size:11px; color:#B0566A;">${esc(error.message)}</div>`; return; }
   BK_MDATA = data || []; drawBkMonth();
 }
-function drawBkMonth(){
+function drawBkMonth(){ return keepScroll(drawBkMonthNow); }
+function drawBkMonthNow(){
   const box = document.getElementById('bkMonth'), today = todayISO();
   bkEditBar();
   const data = BK_MDATA.map(d => { const slots = (d.slots||[]).map(sl => { const k = d.date + '|' + sl.time; return BK_PEND.has(k) ? { ...sl, open: BK_PEND.get(k), pend: true } : sl; });
@@ -2827,8 +2833,9 @@ function bkToggle(date, time, open){
     ${partners.length ? `<label class="row" style="gap:8px; align-items:flex-start; margin-top:12px; padding:10px; background:var(--tint); border-radius:12px; font-size:12px;"><input type="checkbox" id="bkAlsoPair" style="width:auto; margin-top:2px;" ${!open || partners.every(p => p.label === 'Same session as ' + time.replace(':','.')) ? 'checked' : ''}>
       <span>Also ${open ? 'open' : 'close'} <b>${partners.map(p => p.time.replace(':','.')).join(' & ')}</b>?<br><span style="color:var(--muted); font-size:11px;">Same session as ${time.replace(':','.')}.</span></span></label>` : ''}
     <div class="row" style="gap:8px; margin-top:16px;"><button class="btn-ghost tap" id="bkTgCancel" style="flex:1;">Cancel</button><button class="btn-primary tap" id="bkTgOk" style="flex:1;">${open ? 'Open' : 'Close'}</button></div></div>`;
+  const openY = window.scrollY;
   document.body.appendChild(ov);
-  const close = () => ov.remove();
+  const close = () => { ov.remove(); window.scrollTo(0, openY); };
   ov.addEventListener('click', e => { if (e.target === ov) close(); });
   // who-is-it-for: search saved clients by name, Instagram or phone
   let SEL = { type:'none' };
@@ -2868,7 +2875,7 @@ function bkToggle(date, time, open){
           <input id="bkNewWa" placeholder="WhatsApp (optional)" inputmode="tel">
           <div style="font-size:10.5px; color:var(--muted);">Saved to Clients with ${esc(who)} as main nail artist. You can complete the details later.</div>
           <button class="btn-primary tap" id="bkNewSave" style="padding:9px;">Save client &amp; use</button></div>`;
-        (isIg ? box.querySelector('#bkNewName') : box.querySelector('#bkNewIg')).focus();
+        (isIg ? box.querySelector('#bkNewName') : box.querySelector('#bkNewIg')).focus({ preventScroll:true });
         box.querySelector('#bkNewSave').onclick = async () => {
           const name = box.querySelector('#bkNewName').value.trim(), ig = box.querySelector('#bkNewIg').value.trim().replace(/^@+/, ''), wa = box.querySelector('#bkNewWa').value.trim();
           if (!name) return alert('Name is required.');
@@ -2923,7 +2930,7 @@ function bkToggle(date, time, open){
     for (const p of also){ const r = await sb.rpc('ngd_set_slot', { p_artist: artist, p_date: date, p_time: p.time, p_open: open, p_label: pLabel, p_client: null }); if (r.error) alert(`${p.time}: ${r.error.message}`); }
     close(); renderBkMonth();
   };
-  setTimeout(() => { const f = ov.querySelector('#bkForQ'); if (f) f.focus(); }, 50);
+  setTimeout(() => { const f = ov.querySelector('#bkForQ'); if (f) f.focus({ preventScroll:true }); }, 50);
 }
 document.addEventListener('click', async e => {
   const sl = e.target.closest('[data-bkslot]');
@@ -2971,7 +2978,7 @@ document.addEventListener('click', async e => {
     return bkToggle(ad.dataset.bkadd, tt, true); }
   if (e.target.id === 'bkExtraBtn'){ const d = document.getElementById('bkExtraDate').value, t = document.getElementById('bkExtraTime').value; if (!d || !t) return alert('Choose a date and time first.');
     await bkToggle(d, t, true); document.getElementById('bkExtraTime').value = ''; return; }
-  if (e.target.id === 'bkAddBtn'){ const box = document.getElementById('bkAddForm'); if (box.innerHTML){ box.innerHTML = ''; e.target.textContent = '+ Add booking for a client'; return; } if (!BOOK_CFG) await loadBookCfg(); box.innerHTML = bookAddFormHtml(); e.target.textContent = '× Close booking form'; return; }
+  if (e.target.id === 'bkAddBtn'){ BK_FORM_Y = window.scrollY; const box = document.getElementById('bkAddForm'); if (box.innerHTML){ box.innerHTML = ''; e.target.textContent = '+ Add booking for a client'; return; } if (!BOOK_CFG) await loadBookCfg(); box.innerHTML = bookAddFormHtml(); e.target.textContent = '× Close booking form'; return; }
   if (e.target.id === 'bkfSave'){
     const p = { p_client: document.getElementById('bkfClient').value || null, p_artist: document.getElementById('bkSchArtist').value, p_date: document.getElementById('bkfDate').value,
       p_time: document.getElementById('bkfTime').value, p_services: [...document.querySelectorAll('.bkfSvc:checked')].map(x => x.value), p_note: document.getElementById('bkfNote').value.trim() || null, p_force: false };
@@ -2986,7 +2993,7 @@ document.addEventListener('click', async e => {
     }
     if (r.error) return alert('Could not save: ' + r.error.message);
     if (r.data){ const m = await sb.rpc('ngd_set_dp', { p_id: r.data, p_status: dpSel }); if (m.error) alert('Booking saved, but the DP status could not be saved: ' + m.error.message); }
-    document.getElementById('bkAddForm').innerHTML = ''; renderBkMonth(); loadAppts(); reloadCal(); alert('Booking saved. It now shows in the schedule, the calendar and (if the client has an account) on their website.'); return;
+    document.getElementById('bkAddForm').innerHTML = ''; { const b = document.getElementById('bkAddBtn'); if (b) b.textContent = '+ Add booking for a client'; } if (BK_FORM_Y != null) window.scrollTo(0, BK_FORM_Y); renderBkMonth(); loadAppts(); reloadCal(); alert('Booking saved. It now shows in the schedule, the calendar and (if the client has an account) on their website.'); return;
   }
   const ok = e.target.closest('[data-bkok]');
   if (ok){ const ap = APPTS.find(x => x.id === ok.dataset.bkok) || {};
