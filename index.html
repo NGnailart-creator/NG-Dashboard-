@@ -2186,7 +2186,7 @@ if (['Owner','Admin','Senior artist','Junior artist'].includes(currentUser.role)
     <div class="card"><div class="eyebrow">${FIN_ALL ? 'Per nail artist' : 'My numbers'}</div><div id="finArtists" style="margin-top:6px;"></div></div>
     <div class="card"><div class="eyebrow">Top services</div><div id="finSvc" style="margin-top:6px;"></div></div>
     ${isOwner ? `<div class="card"><div class="eyebrow">Only you can change this</div><div class="title" style="font-size:15px;">Commission</div>
-      <div data-info style="font-size:11px; color:var(--muted); margin-top:4px;">Pay = (full service price − studio costs %) × rate. Press-ons also take off the press-on cost first. Loyalty, birthday and gift discounts are covered by the studio. Tips are 100% for the nail artist. A new rate only counts from the month you choose.</div>
+      <div data-info style="font-size:11px; color:var(--muted); margin-top:4px;">Pay = (full service price − studio costs %) × rate. Press-ons also take off the press-on cost first. Loyalty-card rewards and manual discounts are carried by the nail artist (taken off before the rate), except the free base at stamp 10. Birthday, gift and voucher/coupon discounts are covered by the studio. Tips are 100% for the nail artist. A new rate only counts from the month you choose.</div>
       <div id="finRates" style="margin-top:8px;"></div></div>` : ''}
     <div style="font-size:10.5px; color:var(--muted); padding:0 6px 10px;">Only confirmed treatments are counted.</div>
   </div>`);
@@ -2215,7 +2215,8 @@ if (['Owner','Admin','Senior artist','Junior artist'].includes(currentUser.role)
         <div class="row" style="gap:6px; margin-top:10px;">${box(r.count, 'treatments')}${box(r.clients, 'clients')}${box('Rp ' + Math.round((r.count ? r.revenue / r.count : 0) / 1000) + 'K', 'average per visit')}</div>
         <div style="margin-top:12px; font-size:12px;">
           <div class="row" style="justify-content:space-between; padding:4px 0;"><span>Full service value</span><span>Rp ${rupiah(r.gross)}</span></div>
-          <div class="row" style="justify-content:space-between; padding:4px 0; color:#B0566A;"><span>Discounts covered by the studio</span><span>− Rp ${rupiah(r.discounts)}</span></div>
+          ${r.discounts ? `<div class="row" style="justify-content:space-between; padding:4px 0; color:#B0566A;"><span>Discounts covered by the studio</span><span>− Rp ${rupiah(r.discounts)}</span></div>` : ''}
+          ${r.discounts_artist ? `<div class="row" style="justify-content:space-between; padding:4px 0; color:#B0566A;"><span>Loyalty discounts (nail artist carries)</span><span>− Rp ${rupiah(r.discounts_artist)}</span></div>` : ''}
           <div class="row" style="justify-content:space-between; padding:4px 0; border-top:1px solid var(--hairline);"><span>Clients paid</span><span>Rp ${rupiah(r.revenue)}</span></div>
           <div class="row" style="justify-content:space-between; padding:4px 0; color:#B0566A;"><span>Nail artist pay</span><span>− Rp ${rupiah(r.commission)}</span></div>
           <div class="row" style="justify-content:space-between; padding:6px 0 0; border-top:1px solid var(--text); font-weight:600;"><span>Studio keeps</span><span>Rp ${rupiah(keep)}</span></div>
@@ -2228,7 +2229,7 @@ if (['Owner','Admin','Senior artist','Junior artist'].includes(currentUser.role)
         <div style="font-size:28px; font-weight:600; margin-top:2px;">Rp ${rupiah(me ? me.commission + (me.tips||0) : 0)}</div>
         <div style="font-size:11px; color:var(--muted);">${me && me.rate != null ? `${me.rate}% after ${me.cost_pct}% studio costs${me.tips ? ' · includes Rp ' + rupiah(me.tips) + ' in tips' : ''}` : 'Your commission rate isn\'t set yet — ask Gisel.'}</div>
         <div class="row" style="gap:6px; margin-top:10px;">${box(r.count, 'treatments')}${box(r.clients, 'clients')}${box('Rp ' + Math.round(r.gross / 1000) + 'K', 'service value')}</div>
-        <div data-info style="font-size:11px; color:var(--muted); margin-top:8px;">Loyalty, birthday and gift discounts are covered by the studio — they never lower your pay. Tips are 100% yours.</div>
+        <div data-info style="font-size:11px; color:var(--muted); margin-top:8px;">Loyalty-card rewards (free designs, 15% off) and manual discounts come off your service value before your rate. The free base at stamp 10, birthday treats, gifts and vouchers are covered by the studio. Tips are 100% yours.</div>
         ${r.pending_count ? `<div style="font-size:11px; color:var(--muted); margin-top:6px;">⏳ ${r.pending_count} treatment${r.pending_count>1?'s':''} waiting for confirmation — counted once confirmed.</div>` : ''}`;
     }
     const arts = (r.artists || []).filter(a => r.all ? (a.count || a.role !== 'Owner') : true);
@@ -2238,6 +2239,7 @@ if (['Owner','Admin','Senior artist','Junior artist'].includes(currentUser.role)
       <div style="font-size:12px; margin-top:6px;">
         <div class="row" style="justify-content:space-between; padding:2px 0;"><span>Service value</span><span>Rp ${rupiah(a.gross)}</span></div>
         ${a.discounts ? `<div class="row" style="justify-content:space-between; padding:2px 0; color:var(--muted);"><span>Discounts (studio pays)</span><span>Rp ${rupiah(a.discounts)}</span></div>` : ''}
+        ${a.discounts_artist ? `<div class="row" style="justify-content:space-between; padding:2px 0; color:var(--muted);"><span>Loyalty discounts (${esc(a.name)} carries)</span><span>− Rp ${rupiah(a.discounts_artist)}</span></div>` : ''}
         <div class="row" style="justify-content:space-between; padding:2px 0;"><span>Clients paid</span><span>Rp ${rupiah(a.revenue)}</span></div>
         ${a.role === 'Owner' ? '' : `
         <div class="row" style="justify-content:space-between; padding:2px 0; color:var(--muted);"><span>Studio costs ${a.cost_pct != null ? a.cost_pct : 20}%${a.press ? ` + press-on ${a.press}×` : ''}</span><span>− Rp ${rupiah(a.costs)}</span></div>
