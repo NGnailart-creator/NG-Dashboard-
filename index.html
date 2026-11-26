@@ -406,8 +406,9 @@ function clientFormFields(c){
         return `<select id="cfArtist"><option value="">— not set —</option>${names.map(n => `<option ${n===cur?'selected':''}>${esc(n)}</option>`).join('')}</select>`; })()}
       <input id="cfPref" placeholder="Style preferences, comma separated" value="${esc((c.pref||[]).join(', '))}" />`;
 }
-function readClientForm(){
-  const g = id => document.getElementById(id).value.trim();
+function readClientForm(root){
+  // Read from THIS form only — several edit boxes can be open at once and share the same ids
+  const g = id => { const el = (root || document).querySelector('#' + id); return el ? String(el.value || '').trim() : ''; };
   return { name: g('cfName'), phone: g('cfPhone') || null, instagram: g('cfIg') || null, area: g('cfArea') || null,
     birthday: g('cfBday'), sensitivity: g('cfSens') || null, referral: g('cfRef') || null, referral_detail: g('cfRefDetail') || null,
     visits: Math.max(0, parseInt(g('cfVisits')) || 0), first_visit: g('cfFirst') || null, artist: g('cfArtist'),
@@ -429,7 +430,7 @@ document.getElementById('addClientBtn').onclick = () => {
     if (e.target.checked && !u.value) u.value = (document.getElementById('cfName').value.trim().split(' ')[0] || '');
   };
   document.getElementById('saveNewClientBtn').onclick = async () => {
-    const f = readClientForm();
+    const f = readClientForm(document.getElementById('addClientForm'));
     if (!f.name) return alert('Client name is required.');
     const makeLogin = document.getElementById('cfMakeLogin').checked;
     const username = document.getElementById('cfUsername').value.trim();
@@ -1576,12 +1577,13 @@ document.addEventListener('click', async e => {
   if (t.dataset.editdetails){
     const id = t.dataset.editdetails, box = document.getElementById('edit-' + id);
     if (box.innerHTML){ box.innerHTML = ''; return; }
+    document.querySelectorAll('[id^="edit-"]').forEach(b => { if (b !== box) b.innerHTML = ''; }); // only one edit form open at a time
     const c = clients.find(x => x.id === id);
     box.innerHTML = `<div style="display:grid; gap:8px; margin-bottom:10px;">${clientFormFields(c)}<button class="btn-primary tap" data-savedetails="${id}">Save details</button></div>`;
     return;
   }
   if (t.dataset.savedetails){
-    const f = readClientForm();
+    const f = readClientForm(document.getElementById('edit-' + t.dataset.savedetails));
     if (!f.name) return alert('Client name is required.');
     const { error } = await sb.from('ngd_clients').update(f).eq('id', t.dataset.savedetails);
     if (error) return alert('Could not save: ' + error.message);
