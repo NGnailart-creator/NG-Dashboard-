@@ -1668,6 +1668,7 @@ function treatmentRowHtml(t){
     ${t.voucher_amount ? `<div class="row" style="justify-content:space-between; font-size:12px; color:#B0566A;"><span>${esc(t.voucher_label||'Voucher')} <span style="color:var(--muted); font-size:10.5px;">(studio)</span></span><span>−${rupiah(t.voucher_amount)}</span></div>` : ''}
     ${t.coupon_id ? `<div style="font-size:11px; color:#B0566A;">🏷️ Coupon applied</div>` : ''}
     <div class="row" style="justify-content:space-between; font-size:12.5px; font-weight:600; border-top:1px solid var(--text); margin-top:4px; padding-top:4px;"><span>Total</span><span>Rp ${rupiah(t.total)}</span></div>
+    ${t.dp_amount ? `<div class="row" style="justify-content:space-between; font-size:11.5px; color:var(--muted);"><span>− DP</span><span>Rp ${rupiah(t.dp_amount)}</span></div><div class="row" style="justify-content:space-between; font-size:12.5px; font-weight:600;"><span>Sisa bayar</span><span>Rp ${rupiah(Math.max(0, t.total - t.dp_amount))}</span></div>` : ''}
     ${t.tip ? `<div class="row" style="justify-content:space-between; font-size:11.5px; color:var(--muted);"><span>Tip for ${esc(t.artist_name||'the nail artist')}</span><span>Rp ${rupiah(t.tip)}</span></div>` : ''}
     ${t.note ? `<div style="font-size:11px; color:var(--muted); margin-top:4px;">Note for client: ${esc(t.note)}</div>` : ''}
     ${canConfirm ? `<div class="row" style="gap:6px; margin-top:8px;"><button class="btn-primary tap" data-confirm="${t.id}" style="flex:1; font-size:11px; padding:7px;">✓ Confirm price</button></div>` : ''}
@@ -1733,7 +1734,12 @@ function openTreatmentForm(clientId, editT){
       <div style="font-size:10.5px; color:var(--muted); margin-top:-2px;">Voucher, gift card &amp; kupon ditanggung studio — tidak memotong fee nail artist. Diskon loyalty di atas ditanggung nail artist.</div>
       <input id="tfTip" type="number" inputmode="numeric" placeholder="Tip Rp (optional — 100% to the nail artist)" />
       <textarea id="tfNote" placeholder="Note the client will see (color, shape, design…)" style="min-height:44px;"></textarea>
+      <div class="row" style="gap:6px; align-items:center;"><span style="font-size:12px; flex:1;">DP sudah dibayar <span id="tfDpHint" style="font-size:10.5px; color:var(--muted);"></span></span><input id="tfDp" type="number" inputmode="numeric" placeholder="DP Rp" style="flex:1;" /></div>
       <div class="row" style="justify-content:space-between; font-weight:600;"><span>Total</span><span id="tfTotal">Rp 0</span></div>
+      <div id="tfDpLines" style="display:none;">
+        <div class="row" style="justify-content:space-between; font-size:12.5px; color:var(--muted);"><span>DP</span><span id="tfDpShow"></span></div>
+        <div class="row" style="justify-content:space-between; font-weight:600; font-size:14px; border-top:1px solid var(--text); padding-top:4px; margin-top:2px;"><span>Sisa bayar</span><span id="tfRemain"></span></div>
+      </div>
       <button class="btn-primary tap" id="tfSave" style="width:100%;">Save treatment</button>
     </div>
   </div>`;
@@ -1812,6 +1818,10 @@ function openTreatmentForm(clientId, editT){
     sum -= +document.getElementById('tfDisc').value || 0;
     sum -= +((va||{}).value) || 0;
     document.getElementById('tfTotal').textContent = 'Rp ' + rupiah(Math.max(sum,0));
+    const dp = +document.getElementById('tfDp').value || 0;
+    document.getElementById('tfDpLines').style.display = dp ? '' : 'none';
+    if (dp){ document.getElementById('tfDpShow').textContent = '− Rp ' + rupiah(dp); const rem = Math.max(sum,0) - dp;
+      document.getElementById('tfRemain').textContent = rem >= 0 ? 'Rp ' + rupiah(rem) : 'Lebih Rp ' + rupiah(-rem); }
     return Math.max(sum,0);
   };
   if (!editT) addRow();
@@ -1826,7 +1836,7 @@ function openTreatmentForm(clientId, editT){
     if (!(editT.items||[]).length) addRow();
     document.getElementById('tfDiscLabel').value = editT.discount_label || ''; document.getElementById('tfDisc').value = editT.discount_amount || '';
     document.getElementById('tfVLabel').value = editT.voucher_label || ''; document.getElementById('tfVAmt').value = editT.voucher_amount || '';
-    document.getElementById('tfNote').value = editT.note || ''; document.getElementById('tfTip').value = editT.tip || '';
+    document.getElementById('tfNote').value = editT.note || ''; document.getElementById('tfTip').value = editT.tip || ''; document.getElementById('tfDp').value = editT.dp_amount || '';
     document.getElementById('tfSave').textContent = 'Save changes';
     document.getElementById('tfSave').insertAdjacentHTML('afterend', `<button class="btn-ghost tap" id="tfCancelEdit" style="width:100%;">Cancel</button><div style="font-size:10.5px; color:var(--muted);">Status: ${esc(editT.status)}. Loyalty reward and coupon can't be changed here. Every change is recorded in Activity.</div>`);
     document.getElementById('tfCancelEdit').onclick = () => { box.innerHTML = ''; };
@@ -1859,7 +1869,19 @@ function openTreatmentForm(clientId, editT){
   };
   document.getElementById('tfArtist').onchange = refreshList;
   document.getElementById('tfClient').onchange = refreshList;
-  document.getElementById('tfDate').onchange = () => { if (!window._tfEdit) refreshList(); };
+  document.getElementById('tfDate').onchange = () => { if (!window._tfEdit) refreshList(); fillDp(); };
+  async function fillDp(){
+    const dpIn = document.getElementById('tfDp'), hint = document.getElementById('tfDpHint');
+    if (window._tfEdit || dpIn.dataset.manual) return;
+    const cid = document.getElementById('tfClient').value, d = document.getElementById('tfDate').value;
+    if (!cid || cid === '__new' || !d) { dpIn.value = ''; hint.textContent = ''; recalc(); return; }
+    const { data } = await sb.from('ngd_appointments').select('dp_amount, dp_status, proof_path, proof_deleted_at, status').eq('client_id', cid).eq('appt_date', d).neq('status','cancelled');
+    const a = (data||[]).find(x => x.dp_amount && dpDone(x));
+    dpIn.value = a ? a.dp_amount : ''; hint.textContent = a ? '· otomatis dari booking' : ''; recalc();
+  }
+  document.getElementById('tfClient').addEventListener('change', fillDp);
+  document.getElementById('tfDp').addEventListener('input', e => { e.target.dataset.manual = '1'; document.getElementById('tfDpHint').textContent = ''; recalc(); });
+  setTimeout(fillDp, 300);
   box.addEventListener('input', e => {
     if (e.target.id === 'tfVAmt') delete e.target.dataset.auto;
     if (e.target.classList.contains('tfLabel')){
@@ -1929,6 +1951,8 @@ function openTreatmentForm(clientId, editT){
       if (error) return alert('Could not save: ' + error.message);
       const tipNew = +document.getElementById('tfTip').value || 0;
       if (tipNew !== (editT.tip || 0)) { const tr = await sb.rpc('ngd_set_treatment_tip', { p_id: editT.id, p_tip: tipNew }); if (tr.error) alert('Saved, but the tip was not: ' + tr.error.message); }
+      const dpNew = +document.getElementById('tfDp').value || 0;
+      if (dpNew !== (editT.dp_amount || 0)) { const dr = await sb.rpc('ngd_set_treatment_dp', { p_id: editT.id, p_dp: dpNew }); if (dr.error) alert('Saved, but the DP was not: ' + dr.error.message); }
       box.innerHTML = ''; await loadTreatments(); return;
     }
     const client_id = document.getElementById('tfClient').value;
@@ -1944,7 +1968,7 @@ function openTreatmentForm(clientId, editT){
     const payload = { client_id, treatment_date: document.getElementById('tfDate').value || todayISO(), artist_id: artist ? artist.id : null, artist_name: artistName,
       items, discount_label: document.getElementById('tfDiscLabel').value.trim() || null, discount_amount: +document.getElementById('tfDisc').value || 0,
       voucher_label: document.getElementById('tfVLabel').value.trim() || null, voucher_amount: +document.getElementById('tfVAmt').value || 0,
-      total: recalc(), tip: +document.getElementById('tfTip').value || 0, order_type: window._tfType === 'press_on' ? 'press_on' : 'studio', counts_as_visit: window._tfType !== 'press_on', note: document.getElementById('tfNote').value.trim() || null, created_by: currentUser.id, reward: (() => {
+      total: recalc(), tip: +document.getElementById('tfTip').value || 0, dp_amount: +document.getElementById('tfDp').value || 0, order_type: window._tfType === 'press_on' ? 'press_on' : 'studio', counts_as_visit: window._tfType !== 'press_on', note: document.getElementById('tfNote').value.trim() || null, created_by: currentUser.id, reward: (() => {
         const R = window._tfReward; if (window._tfType === 'press_on' || !R || !R.opts.length) return null;
         const sel = box.querySelector('input[name="tfRw"]:checked'); const pick = sel && sel.value !== 'none' ? R.opts[+sel.value] : null;
         return { earned: R.earned, use: pick ? (pick.from === 'birthday' ? {from:'birthday', key:pick.key} : pick.from === 'now' ? {from:'now', cycle:pick.cycle} : {from:'saved', cycle:pick.cycle, earned_visit:pick.earned_visit}) : null };
