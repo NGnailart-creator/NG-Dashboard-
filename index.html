@@ -80,6 +80,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
+var CODES = {};
 // ---------- SUPABASE ----------
 const SUPABASE_URL = 'https://avetybynptepfqmxedfj.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2ZXR5YnlucHRlcGZxbXhlZGZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3NTA4NjEsImV4cCI6MjEwMzMyNjg2MX0.PPvK1EnSfV0QDE-OkoEpD7WhgU3CM048IL5YLypCtHc';
@@ -1483,7 +1484,8 @@ function clientExtrasHtml(c){
     <div style="display:grid; gap:4px; margin-bottom:10px;">${ACH_LIST.map(([k,l]) => `<label class="row" style="gap:8px; font-size:12px; align-items:flex-start;"><input type="checkbox" style="width:auto; margin-top:2px;" data-ach="${c.id}" data-key="${k}" ${c.achievements[k] ? 'checked' : ''}/> <span>${l}${c.achievements[k] ? ` <span style="color:var(--muted); font-size:10px;">(${esc(c.achievements[k])})</span>` : ''}${!c.achievements[k] && c.achReq && c.achReq[k] ? `<br><span style="font-size:10.5px; color:#8A2D1F;">✋ Client asked for this tick${c.achReq[k].note ? ': “' + esc(c.achReq[k].note) + '”' : ''}</span>` : ''}</span></label>`).join('')}</div>
     <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">👤 Client website account</div>
     ${c.hasLogin ? `
-      <div style="font-size:12.5px;">Username: <b>${esc(c.username)}</b> ${c.mustSetPin ? '<span class="tag">waiting for client to set PIN</span>' : '<span class="tag">active</span>'} <span class="tap" data-renamelogin="${c.id}" style="cursor:pointer; font-size:11px; color:var(--muted); text-decoration:underline;">edit</span></div>
+      <div style="font-size:12.5px;">Username: <b>${esc(c.username)}</b> ${c.mustSetPin ? '<span class="tag">waiting for client to set PIN</span>' : '<span class="tag">active</span>'}
+      ${c.mustSetPin ? (CODES[c.id] ? `<div style="font-size:12.5px; margin-top:4px;">Login code: <b style="letter-spacing:.12em;">${esc(CODES[c.id])}</b> <span style="font-size:10.5px; color:var(--muted);">— works until she sets her own PIN</span></div>` : `<div style="font-size:10.5px; color:var(--muted); margin-top:4px;">Code not saved (made before codes were kept). Use Reset PIN for a new one.</div>`) : ''} <span class="tap" data-renamelogin="${c.id}" style="cursor:pointer; font-size:11px; color:var(--muted); text-decoration:underline;">edit</span></div>
       ${isOwner ? `<div class="row" style="gap:6px; margin-top:6px;">
         <button class="btn-primary tap" data-welcome="${c.id}" style="font-size:10.5px; padding:6px 10px;">💌 Welcome card</button>
         <button class="btn-ghost tap" data-resetpin="${c.id}" style="font-size:10.5px; padding:6px 10px;">Reset PIN</button>
@@ -1530,7 +1532,7 @@ document.addEventListener('click', async e => {
     if (!u) return;
     const { data, error } = await sb.rpc('ngd_create_client_login', { p_client_id: c.id, p_username: u.trim() });
     if (error) return alert('Could not create login: ' + error.message);
-    c.username = u.trim(); c.hasLogin = true; c.mustSetPin = true; renderClients(document.getElementById('clientSearch').value);
+    CODES[c.id] = data; c.username = u.trim(); c.hasLogin = true; c.mustSetPin = true; renderClients(document.getElementById('clientSearch').value);
     openWelcome(c, u.trim(), data);
   }
   if (t.dataset.resetpin){
@@ -1538,15 +1540,16 @@ document.addEventListener('click', async e => {
     if (!confirm(`Reset ${c.name}'s PIN?`)) return;
     const { data, error } = await sb.rpc('ngd_reset_client_pin', { p_client_id: c.id });
     if (error) return alert(error.message);
-    c.mustSetPin = true; renderClients(document.getElementById('clientSearch').value);
+    CODES[c.id] = data; c.mustSetPin = true; renderClients(document.getElementById('clientSearch').value);
     openWelcome(c, c.username, data);
   }
   if (t.dataset.welcome){
     const c = clients.find(x => x.id === t.dataset.welcome);
+    if (c.mustSetPin && CODES[c.id]) return openWelcome(c, c.username, CODES[c.id]);
     if (!confirm(`Make a welcome card for ${c.name}?\n\nThis creates a new one-time code for her. Any code you gave her before stops working.`)) return;
     const { data, error } = await sb.rpc('ngd_reset_client_pin', { p_client_id: c.id });
     if (error) return alert(error.message);
-    c.mustSetPin = true; renderClients(document.getElementById('clientSearch').value);
+    CODES[c.id] = data; c.mustSetPin = true; renderClients(document.getElementById('clientSearch').value);
     openWelcome(c, c.username, data);
   }
   if (t.dataset.dellogin){
@@ -1684,7 +1687,10 @@ async function loadTreatments(){
   document.getElementById('treatDone').innerHTML = done.length ? done.map(treatmentRowHtml).join('') : '<div style="font-size:12px; color:var(--muted);">No confirmed treatments yet.</div>';
   });
 }
+async function loadCodes(){ const { data } = await sb.from('ngd_client_codes').select('client_id, code'); CODES = {}; (data||[]).forEach(r => CODES[r.client_id] = r.code); }
+setTimeout(async () => { try { await loadCodes(); const s = document.getElementById('clientSearch'); if (s && typeof renderClients === 'function') renderClients(s.value); } catch(_) {} }, 1500);
 async function reloadClients(){
+  await loadCodes();
   const { data } = await sb.from('ngd_clients').select('*').order('created_at');
   clients = (data||[]).map(mapClientRow); keepScroll(() => renderClients(document.getElementById('clientSearch').value));
 }
