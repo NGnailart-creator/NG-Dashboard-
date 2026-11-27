@@ -3473,9 +3473,9 @@ async function loadHomeLog(){
       items.push({aid:a.artist_id, cid:a.client_id, name:a.client_name || ((clients.find(c => c.id === a.client_id)||{}).name) || 'Client', artist:a.artist_name || ((people.find(p => p.id === a.artist_id)||{}).name) || '', date:a.appt_date, start:a.start_min||0, what:a.summary||'', svc:a.services||null}); }
     for (const o of ro.data||[]){ const k = o.client_id + '|' + o.odate; if (seen.has(k)) continue; seen.add(k);
       items.push({aid:o.artist_id, cid:o.client_id, name:((clients.find(c => c.id === o.client_id)||{}).name) || o.label || 'Client', artist:((people.find(p => p.id === o.artist_id)||{}).name) || '', date:o.odate, start:o.omin||0, what:''}); }
-    // deadline: 30 min before the same artist's next client that day, otherwise 18.30 (studio closes)
-    const dlOf = i => { const n = items.filter(x => x.aid === i.aid && x.date === i.date && x.cid !== i.cid && x.start > i.start).map(x => x.start); return n.length ? Math.max(Math.min(...n) - 30, i.start + 30) : 1110; };
-    const todo = items.map(i => { const tr = trByKey.get(i.cid + '|' + i.date), dl = dlOf(i); return { ...i, tr, dl, nextClient: dl !== 1110, need: !tr ? 'log' : (sent.has(tr) ? '' : 'photo') }; })
+    // deadline: 15 min before the same artist's next client that day, otherwise 20.00
+    const dlOf = i => { const n = items.filter(x => x.aid === i.aid && x.date === i.date && x.cid !== i.cid && x.start > i.start).map(x => x.start); return n.length ? Math.max(Math.min(...n) - 15, i.start + 30) : 1200; };
+    const todo = items.map(i => { const tr = trByKey.get(i.cid + '|' + i.date), dl = dlOf(i); return { ...i, tr, dl, nextClient: dl !== 1200, need: !tr ? 'log' : (sent.has(tr) ? '' : 'photo') }; })
       .filter(i => i.need && (i.date < t || i.start <= nowMin))
       .sort((a,b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.start - b.start));
     window.HOME_TODO = todo;
@@ -3496,7 +3496,7 @@ async function loadHomeLog(){
       const late = isLate(i), past = i.date < t, n = daysLate(i.date), dlTxt = minToHM(i.dl);
       const missing = i.need === 'log' ? (idl ? 'Rincian harga & foto belum diisi' : 'Price details & photos missing') : (idl ? 'Harga sudah diisi · foto belum dikirim ke klien' : 'Price done · photos not sent to the client yet');
       const tag = late ? `<span class="tag" style="background:#B0566A; color:#fff;">${idl ? 'Terlambat' : 'Late'} · ${past ? 'H+' + n : (idl ? 'lewat ' : 'after ') + dlTxt}</span>` : `<span class="tag">${idl ? 'Hari ini' : 'Today'} · ${minToHM(i.start)}</span>`;
-      const why = i.nextClient ? (idl ? '30 menit sebelum klien berikutnya' : '30 min before your next client') : (idl ? 'sebelum studio tutup' : 'before the studio closes');
+      const why = i.nextClient ? (idl ? '15 menit sebelum klien berikutnya' : '15 min before your next client') : (idl ? 'paling lambat jam 20.00' : 'by 20.00');
       const msg = late && !past
         ? `<div style="font-size:11.5px; color:#B0566A; font-weight:600; margin-top:5px; line-height:1.4;">${idl ? `😢 Kamu sudah lewat batas jam ${dlTxt} (${why}). Kliennya masih menunggu — mohon isi harga dan kirim fotonya sekarang.` : `😢 You missed the ${dlTxt} deadline (${why}). Your client is still waiting — please add the price and send the photos now.`}</div>`
         : late
@@ -3700,7 +3700,7 @@ async function loadReview(){
   const list = document.getElementById('revList'); if (!list) return;
   document.getElementById('revEyebrow').textContent = revT('Evaluasi bulanan', 'Monthly review');
   document.getElementById('revTitle').textContent = revT('Ketepatan posting', 'Posting on time');
-  document.getElementById('revRule').textContent = revT('Tepat waktu = harga dan foto selesai paling lambat 30 menit sebelum klien berikutnya, atau jam 18.30 untuk klien terakhir.', 'On time = price and photos done by 30 min before the next client, or 18.30 for the last client.');
+  document.getElementById('revRule').textContent = revT('Tepat waktu = harga dan foto selesai paling lambat 15 menit sebelum klien berikutnya, atau jam 20.00 untuk klien terakhir.', 'On time = price and photos done by 15 min before the next client, or 20.00 for the last client.');
   list.innerHTML = '<div class="card" style="font-size:12px; color:var(--muted);">…</div>';
   const { data, error } = await sb.rpc('ngd_punctuality', { p_month: revMonthVal() });
   if (error){ list.innerHTML = `<div class="card" style="font-size:12px; color:#B0566A;">${esc(error.message)}</div>`; return; }
@@ -3726,11 +3726,19 @@ function drawReview(){
       <div class="row" style="justify-content:space-between; align-items:flex-start;"><div><div class="eyebrow">${esc(mName)}</div><div class="title" style="font-size:15px;">${esc(p.name)}</div><div style="font-size:10.5px; color:var(--muted); margin-top:2px;">${esc(p.role||'')}${startNote ? ' · ' + startNote : ''}</div></div>
         <button class="pill tap noprint" data-revprint="${p.artist_id}" style="font-size:10.5px;">🖨️ ${revT('Simpan / print', 'Save / print')}</button></div>
       <div class="row" style="gap:6px; margin-top:12px;">${box('✅ ' + p.on_time, revT('Tepat waktu', 'On time'))}${box('⏰ ' + p.late, revT('Terlambat', 'Late'), p.avg_late_min ? revT(`rata-rata ${fm(p.avg_late_min)}`, `avg ${fm(p.avg_late_min)}`) : '')}</div>
+      ${(p.late + p.overdue) ? `<div class="row" style="gap:6px; margin-top:6px;">${box('🕰️ ' + (p.late_overrun||0), revT('Klien sebelumnya molor', 'Previous client ran over'))}${box('📤 ' + (p.late_posted||0), revT('Telat kirim', 'Posted late'))}${p.late_unanswered ? box('❓ ' + p.late_unanswered, revT('Belum dijawab', 'No reason yet')) : ''}</div>` : ''}
       <div class="row" style="gap:6px; margin-top:6px;">${box('😢 ' + p.overdue, revT('Belum diposting', 'Not posted yet'))}${box(pct == null ? '–' : pct + '%', revT('Tepat waktu', 'On time rate'))}</div>
       ${total ? `<div style="height:7px; border-radius:9px; background:var(--tint); margin-top:10px; overflow:hidden; display:flex;"><div style="width:${p.on_time/total*100}%; background:var(--text);"></div><div style="width:${p.late/total*100}%; background:#C9A9A6;"></div><div style="width:${p.overdue/total*100}%; background:#B0566A;"></div></div>` : ''}
       <div style="font-size:12px; margin-top:10px; line-height:1.5;">${mood}</div>
+      ${(p.late_overrun||0) >= 2 ? `<div style="font-size:12px; margin-top:8px; line-height:1.5; background:#FFF7EF; border:1px solid var(--text); border-radius:12px; padding:10px 12px;">📅 ${revT(`Sesi sering molor (${p.late_overrun}×) — jadwalnya terlalu mepet. Beri jeda lebih panjang antar klien, atau ubah durasi treatment supaya slot berikutnya lebih berjarak.`, `Sessions often ran over (${p.late_overrun}×) — the schedule is too tight. Leave a longer gap between clients, or update your treatment durations so the next slot is spaced out.`)}${p.artist_id === currentUser.id ? `<button class="btn-ghost tap noprint" data-durcheck style="width:100%; margin-top:8px; font-size:11.5px;">${revT('Ubah durasi treatment saya', 'Update my treatment durations')}</button>` : ''}</div>` : ''}
+      ${(p.late_posted||0) >= 2 ? `<div style="font-size:12px; margin-top:8px; line-height:1.5;">📤 ${revT(`Telat kirim ${p.late_posted}× — kirim harga & foto langsung setelah klien selesai, sebelum beres-beres.`, `Posted late ${p.late_posted}× — send the price & photos right after the client finishes, before tidying up.`)}</div>` : ''}
       ${(p.items||[]).length ? `<details style="margin-top:8px;"><summary style="font-size:11px; color:var(--muted); cursor:pointer;">${revT('Rincian per klien', 'Per client')} (${p.items.length})</summary>
-        <div style="margin-top:6px;">${p.items.map(i => `<div class="row" style="justify-content:space-between; font-size:11.5px; padding:4px 0; border-top:1px dotted var(--hairline);"><span>${icon(i.status)} ${esc(i.client||'Client')} · ${fd(i.date)}</span><span style="color:${i.status === 'on_time' ? 'var(--text)' : '#B0566A'};">${lbl(i)}</span></div>`).join('')}</div></details>` : ''}
+        <div style="margin-top:6px;">${p.items.map(i => `<div class="row" style="justify-content:space-between; font-size:11.5px; padding:4px 0; border-top:1px dotted var(--hairline);"><span>${icon(i.status)} ${esc(i.client||'Client')} · ${fd(i.date)}</span><span style="color:${i.status === 'on_time' ? 'var(--text)' : '#B0566A'};">${lbl(i)}</span></div>${i.cause ? `<div style="font-size:11px; color:var(--muted); padding:0 0 4px 20px;">${i.cause === 'overrun' ? '🕰️ ' + revT('Klien sebelumnya molor', 'Previous client ran over') : '📤 ' + revT('Telat kirim', 'Posted late')}${i.reason ? ' — ' + esc(i.reason) : ''}</div>` : ''}`).join('')}</div></details>` : ''}
+      ${p.artist_id === currentUser.id ? (p.items||[]).filter(i => (i.status === 'late' || i.status === 'overdue') && !i.cause).map(i => `<div class="noprint" data-lrbox="${i.client_id}|${i.date}" style="margin-top:8px; border:1px solid #B0566A; border-radius:12px; padding:10px 12px;">
+          <div style="font-size:12px;"><b>❓ ${esc(i.client||'Client')} · ${fd(i.date)}</b> — ${revT('kenapa terlambat?', 'why was it late?')}</div>
+          <div class="row" style="gap:6px; margin-top:8px;"><button class="pill tap" data-lrcause="overrun" style="flex:1; font-size:11px;">🕰️ ${revT('Klien sebelumnya molor', 'Previous client ran over')}</button><button class="pill tap" data-lrcause="posted_late" style="flex:1; font-size:11px;">📤 ${revT('Aku telat kirim', 'I posted late')}</button></div>
+          <textarea data-lrreason placeholder="${revT('Alasannya (opsional), mis. desain lebih rumit dari rencana', 'Reason (optional), e.g. the design took longer than planned')}" style="min-height:44px; margin-top:6px; font-size:12px;"></textarea>
+          <button class="btn-primary tap" data-lrsave style="width:100%; margin-top:6px; font-size:11.5px; padding:8px;">${revT('Kirim jawaban', 'Send answer')}</button></div>`).join('') : ''}
       <div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--hairline);">
         <div style="font-size:11px; font-weight:600;">${revT('Catatan dari owner', "Owner's note")}</div>
         ${isOwner ? `<textarea class="noprint" data-revnote="${p.artist_id}" placeholder="${revT('Yang sudah bagus, yang perlu diperbaiki…', 'What went well, what to improve…')}" style="min-height:54px; margin-top:4px; font-size:12px;">${esc(p.note||'')}</textarea>` : ''}
@@ -3742,6 +3750,28 @@ function drawReview(){
       </div></div>`; }).join('');
 }
 document.addEventListener('change', e => { if (e.target.id === 'revMonth') loadReview(); });
+// Home nudge: late treatments the artist still needs to explain
+setTimeout(async () => {
+  if (!['Owner','Senior artist','Junior artist'].includes(currentUser.role)) return;
+  const n = new Date(); const { data } = await sb.rpc('ngd_punctuality', { p_month: n.getFullYear() + '-' + String(n.getMonth()+1).padStart(2,'0') + '-01' });
+  const me = ((data||{}).people||[]).find(p => p.artist_id === currentUser.id); if (!me || !me.late_unanswered) return;
+  const home = document.getElementById('page-home'); if (!home || document.getElementById('lrNudge')) return;
+  home.insertAdjacentHTML('afterbegin', `<button id="lrNudge" class="card tap" style="display:block; width:100%; text-align:left; border-color:#B0566A; cursor:pointer; font:inherit; color:inherit;">
+    <div style="font-size:12.5px; font-weight:600;">❓ ${revT(`${me.late_unanswered} keterlambatan perlu kamu jelaskan`, `${me.late_unanswered} late treatment${me.late_unanswered > 1 ? 's need' : ' needs'} a reason`)}</div>
+    <div style="font-size:11px; color:var(--muted); margin-top:2px;">${revT('Klien sebelumnya molor, atau kamu telat kirim? Tap untuk menjawab.', 'Did the previous client run over, or did you post late? Tap to answer.')}</div></button>`);
+  document.getElementById('lrNudge').onclick = () => { document.getElementById('lrNudge').remove(); const nb = document.querySelector('.navbtn[data-key="review"]'); if (nb) nb.click(); };
+}, 3000);
+document.addEventListener('click', async e => {
+  const c = e.target.closest('[data-lrcause]');
+  if (c){ const bx = c.closest('[data-lrbox]'); bx.dataset.cause = c.dataset.lrcause; bx.querySelectorAll('[data-lrcause]').forEach(x => { x.classList.toggle('active', x === c); }); return; }
+  const sv = e.target.closest('[data-lrsave]'); if (!sv) return;
+  const bx = sv.closest('[data-lrbox]'); if (!bx.dataset.cause) return alert(revT('Pilih dulu: klien sebelumnya molor, atau kamu telat kirim.', 'Choose first: previous client ran over, or you posted late.'));
+  const [cid, d] = bx.dataset.lrbox.split('|');
+  sv.disabled = true;
+  const { error } = await sb.from('ngd_late_reasons').upsert({ artist_id: currentUser.id, client_id: cid, d, cause: bx.dataset.cause, reason: bx.querySelector('[data-lrreason]').value.trim() || null });
+  sv.disabled = false; if (error) return alert(error.message);
+  loadReview();
+});
 document.addEventListener('click', async e => {
   const nb = e.target.closest('.navbtn'); if (nb && nb.dataset.key === 'review') loadReview();
   const sv = e.target.closest('[data-revsave]');
