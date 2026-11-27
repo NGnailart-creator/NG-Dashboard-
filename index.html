@@ -890,7 +890,9 @@ window.loadStorage = async function(){
   body.innerHTML = storeBar('Files & photos', data.files_bytes, STORE_LIMIT.files) + storeBar('Database (clients, bookings, notes…)', data.db_bytes, STORE_LIMIT.db)
     + `<div style="font-size:11px; font-weight:600; color:var(--text); margin:4px 0 4px;">Files by type · ${data.files_count} files</div>`
     + ((data.buckets||[]).map(x => `<div class="row" style="justify-content:space-between; font-size:11.5px; padding:2px 0;"><span>${esc(STORE_NAMES[x.bucket] || x.bucket)} <span style="color:var(--muted);">· ${x.count}</span></span><span>${fmtBytes(x.bytes)}</span></div>`).join('') || '<div style="font-size:11px;">No files yet.</div>')
-    + `<div style="font-size:10.5px; color:var(--muted); margin-top:8px;">Free plan limits: 1 GB files, 500 MB database. Checked ${new Date(data.checked_at).toLocaleString('id-ID')}. Monthly download use (5 GB) isn't shown here — see Supabase → Usage.</div>`;
+    + `<div style="font-size:10.5px; color:var(--muted); margin-top:8px;">Free plan limits: 1 GB files, 500 MB database. Checked ${new Date(data.checked_at).toLocaleString('id-ID')}. Monthly download use (5 GB) is only shown by Supabase.</div>
+    <a href="https://supabase.com/dashboard/org/xbejzpluhprjjxnhefih/usage" target="_blank" rel="noopener" class="btn-ghost tap" style="display:block; text-align:center; margin-top:8px; font-size:12px; text-decoration:none;">📶 See monthly downloads (5 GB) ↗</a>
+    <div style="font-size:10px; color:var(--muted); margin-top:4px;">Opens Supabase. Log in with natasyagishelle.nailart@gmail.com, then look at <b>Egress</b>.</div>`;
 };
 document.addEventListener('click', e => { if (e.target.id === 'storageRefresh') loadStorage(); });
 if (currentUser.role === 'Owner') setTimeout(loadStorage, 0);
