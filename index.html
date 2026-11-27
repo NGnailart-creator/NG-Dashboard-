@@ -1964,12 +1964,15 @@ function openTreatmentForm(clientId, editT){
     const cid = document.getElementById('tfClient').value;
     if (window._tfEdit || !cid || cid === '__new'){ el.innerHTML = ''; return; }
     const { data } = await sb.from('ngd_coupons').select('code,title_en,value_text,expires_on').eq('client_id', cid).eq('status','active').order('created_at');
-    const list = (data||[]).filter(k => !k.expires_on || k.expires_on >= todayISO());
-    if (!list.length){ el.innerHTML = ''; return; }
-    el.innerHTML = `<div style="font-size:11px; color:var(--muted); margin-bottom:4px;">🎁 This client's gifts & coupons — tap to use it in this visit</div>`
+    const isGift = k => /cuticle oil|hand care/i.test(k.title_en || '');
+    const all = (data||[]).filter(k => !k.expires_on || k.expires_on >= todayISO());
+    const list = all.filter(isGift), locked = all.filter(k => !isGift(k));
+    if (!all.length){ el.innerHTML = ''; return; }
+    el.innerHTML = (list.length ? `<div style="font-size:11px; color:var(--muted); margin-bottom:4px;">🎁 This client's gifts — tap to use it in this visit</div>` : '')
       + list.map(k => `<button class="tap" data-usecpn="${esc(k.code)}" style="display:flex; width:100%; align-items:center; gap:8px; margin-bottom:6px; padding:10px 12px; border:1px solid var(--hairline); border-radius:12px; background:#fff; font:inherit; text-align:left; cursor:pointer;">
           <span style="flex:1; font-size:12.5px;">${esc((k.title_en||'Coupon').replace(/^Pick a gift:\s*/i,'').replace(/\.$/,''))}${k.expires_on ? `<span style="display:block; font-size:10.5px; color:var(--muted);">until ${esc(k.expires_on)}</span>` : ''}</span>
-          <span class="pill" style="font-size:10.5px; padding:4px 10px;">Use</span></button>`).join('');
+          <span class="pill" style="font-size:10.5px; padding:4px 10px;">Use</span></button>`).join('')
+      + (locked.length ? `<div style="font-size:10.5px; color:var(--muted); margin:2px 0 6px;">🔒 Discount coupons need the client's code: ${locked.map(k => esc((k.title_en||'Coupon').replace(/^Pick a gift:\s*/i,'').replace(/\.$/,''))).join(' · ')}</div>` : '');
   }
   document.getElementById('tfClient').addEventListener('change', fillCoupons);
   setTimeout(fillCoupons, 350);
