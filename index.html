@@ -1115,29 +1115,62 @@ function canEditPrices(who){
   if (currentUser.role === 'Owner') return true;
   return who !== 'owner' && who === currentUser.name.toLowerCase();
 }
+const PRICE_OPEN = new Set();
 function renderPriceSheet(who){
-  const p = PRICING[who];
+  const p = PRICING[who], can = canEditPrices(who);
   document.getElementById('priceSheet').innerHTML = `
     <div class="card">
       <div class="title" style="font-size:15px;">${p.label}'s price list</div>
-      ${p.sections.map(sec => `
-        <div style="margin-top:10px;">
-          <div style="font-size:11px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:.02em; margin-bottom:4px;">${sec.name}</div>
-          ${sec.items.map(it => `
-            <div class="row" style="justify-content:space-between; padding:5px 0; border-top:1px solid var(--hairline);">
-              <span style="font-size:12px;">${it.label}</span>
-              <input data-priceid="${it.id}" value="${it.price}" ${canEditPrices(who) ? '' : 'readonly'} style="width:110px; text-align:right; font-size:12px; padding:5px 7px;" />
-            </div>`).join('')}
-        </div>`).join('')}
-      <div style="font-size:10.5px; color:var(--muted); margin-top:10px;">${canEditPrices(who) ? 'Edit a price and tap away — it saves automatically.' : 'View only — only ' + (who==='owner' ? 'the owner' : p.label) + ' can change these prices.'}</div>
+      <div style="font-size:10.5px; color:var(--muted); margin-top:2px;">Tap a section to open it.</div>
+      ${p.sections.map(sec => { const k = who + '|' + sec.name, open = PRICE_OPEN.has(k); return `
+        <div style="margin-top:8px; border:1px solid ${open ? 'var(--text)' : 'var(--hairline)'}; border-radius:14px; overflow:hidden;">
+          <button class="tap" data-pricesec="${esc(k)}" style="width:100%; display:flex; align-items:center; gap:10px; padding:12px 14px; background:var(--card,#fff); border:0; font:inherit; color:inherit; cursor:pointer; text-align:left;">
+            <span style="flex:1; font-size:12.5px; font-weight:600; letter-spacing:.02em;">${esc(sec.name)}</span>
+            <span style="font-size:10.5px; color:var(--muted);">${sec.items.length} item${sec.items.length===1?'':'s'}</span>
+            <span style="display:inline-block; transition:transform .25s; transform:rotate(${open ? 90 : 0}deg); font-size:15px;">›</span></button>
+          ${open ? `<div style="padding:0 14px 12px;">
+            ${sec.items.map(it => `
+              <div class="row" style="justify-content:space-between; align-items:center; gap:8px; padding:6px 0; border-top:1px solid var(--hairline);">
+                <span style="font-size:12px; flex:1;">${esc(it.label)}</span>
+                <input data-priceid="${it.id}" value="${esc(it.price)}" ${can ? '' : 'readonly'} style="width:104px; text-align:right; font-size:12px; padding:5px 7px;" />
+                ${can ? `<span class="tap" data-pricedel="${it.id}" title="Remove" style="cursor:pointer; color:var(--muted); font-size:12px;">✕</span>` : ''}
+              </div>`).join('')}
+            ${can ? `<div class="row" style="gap:6px; margin-top:8px; padding-top:8px; border-top:1px dashed var(--hairline);">
+              <input data-newname="${esc(k)}" placeholder="New ${esc(sec.name.toLowerCase())} item" style="flex:2; font-size:12px; padding:7px 8px;" />
+              <input data-newprice="${esc(k)}" placeholder="Price, e.g. 25K/nail" style="flex:1.3; font-size:12px; padding:7px 8px;" />
+              <button class="btn-primary tap" data-newadd="${esc(k)}" style="font-size:11px; padding:7px 10px;">Add</button></div>` : ''}
+          </div>` : ''}
+        </div>`; }).join('')}
+      <div style="font-size:10.5px; color:var(--muted); margin-top:10px;">${can ? 'Edit a price and tap away — it saves automatically. The client website shows Base, Remove, Callus and Press-On from the Owner and Nayla lists, and Design and Add-On from Nayla\'s list.' : 'View only — only ' + (who==='owner' ? 'the owner' : p.label) + ' can change these prices.'}</div>
     </div>`;
   document.querySelectorAll('[data-priceid]').forEach(inp => {
     inp.addEventListener('change', async () => {
       const { error } = await sb.from('ngd_pricing').update({price:inp.value}).eq('id', inp.dataset.priceid);
       if (error) alert('Could not save price: ' + error.message);
+      else { for (const sec of p.sections) for (const it of sec.items) if (String(it.id) === inp.dataset.priceid) it.price = inp.value; }
     });
   });
 }
+async function reloadPricing(){ const { data } = await sb.from('ngd_pricing').select('*').order('sort_order'); PRICING = buildPricingFromRows(data||[]); }
+document.addEventListener('click', async e => {
+  const sb1 = e.target.closest('[data-pricesec]');
+  if (sb1){ const k = sb1.dataset.pricesec; PRICE_OPEN.has(k) ? PRICE_OPEN.delete(k) : PRICE_OPEN.add(k); renderPriceSheet(k.split('|')[0]); return; }
+  const add = e.target.closest('[data-newadd]');
+  if (add){ const k = add.dataset.newadd, [who, section] = [k.split('|')[0], k.split('|').slice(1).join('|')];
+    const name = document.querySelector(`[data-newname="${CSS.escape(k)}"]`).value.trim(), price = document.querySelector(`[data-newprice="${CSS.escape(k)}"]`).value.trim();
+    if (!name || !price) return alert('Fill in the name and the price.');
+    const sec = PRICING[who].sections.find(x => x.name === section);
+    const { data: mx } = await sb.from('ngd_pricing').select('sort_order').eq('person', who).eq('section', section).order('sort_order', { ascending:false }).limit(1);
+    const { error } = await sb.from('ngd_pricing').insert({ person: who, section, item: name, price, sort_order: ((mx && mx[0] && mx[0].sort_order) || 0) + 1 });
+    if (error) return alert('Could not add: ' + error.message);
+    await reloadPricing(); PRICE_OPEN.add(k); renderPriceSheet(who); return; }
+  const del = e.target.closest('[data-pricedel]');
+  if (del){ if (!confirm('Remove this item from the price list?')) return;
+    const { error } = await sb.from('ngd_pricing').delete().eq('id', del.dataset.pricedel);
+    if (error) return alert(error.message);
+    const who = Object.keys(PRICING).find(w => PRICING[w].sections.some(sc => sc.items.some(it => String(it.id) === del.dataset.pricedel)));
+    await reloadPricing(); renderPriceSheet(who); }
+});
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-pricewho]');
   if (b){
@@ -1719,13 +1752,14 @@ function openTreatmentForm(clientId, editT){
       <datalist id="tfItemsList"></datalist>
       <div data-info style="font-size:10.5px; color:var(--muted);">Items — start typing (e.g. "cat") to pick from the price list. Unit price fills in automatically; ranges use the lowest price, so adjust if needed.</div>
       <div id="tfRows"></div>
-      <button class="btn-ghost tap" id="tfAddRow" style="font-size:11px;">+ Add item</button>
+      <div class="row" style="gap:6px;"><button class="btn-primary tap" id="tfPick" style="flex:1.4; font-size:11.5px;">📋 Choose from price list</button><button class="btn-ghost tap" id="tfAddRow" style="flex:1; font-size:11px;">+ Empty row</button></div>
       <div class="row" style="gap:6px;">
         <input id="tfDiscLabel" placeholder="Discount name (shown on receipt)" style="flex:2;" />
         <input id="tfDisc" type="number" inputmode="numeric" placeholder="Amount Rp" style="flex:1;" />
       </div>
       <div data-info style="font-size:10.5px; color:var(--muted); margin-top:-2px;">Only if there is a discount. Name = what the client sees (e.g. "Loyalty stamp 8 – 15% off"), amount = how many rupiah are taken off (e.g. 52500). Leave both empty if none.</div>
-      <input id="tfCoupon" placeholder="Coupon / gift card code (only if the client shows one)" style="text-transform:uppercase;" autocapitalize="characters" />
+      <div id="tfCpnChips"></div>
+      <input id="tfCoupon" placeholder="Other coupon / gift card code (only if the client shows one)" style="text-transform:uppercase;" autocapitalize="characters" />
       <div id="tfCouponInfo" style="font-size:11px; color:var(--muted); margin-top:-2px;"></div>
       <div class="row" style="gap:6px;">
         <input id="tfVLabel" placeholder="Voucher / gift name (studio pays)" style="flex:2;" />
@@ -1790,6 +1824,51 @@ function openTreatmentForm(clientId, editT){
       past.map(l => `<option value="${esc(l)}">⟲ ordered before</option>`).join('') +
       sheet.filter(s => !past.includes(s.label)).sort((a, b) => window._tfType === 'press_on' ? (/press/i.test(b.sec) - /press/i.test(a.sec)) : 0).map(s => `<option value="${esc(s.label)}">${esc(s.sec)} · ${esc(s.price)}</option>`).join('');
   };
+  // ---- price-list picker: grouped, readable, tap to add ----
+  const openPicker = () => {
+    const key = priceKeyFor(document.getElementById('tfArtist').value);
+    const secs = (PRICING[key]||{sections:[]}).sections;
+    const past = [...document.getElementById('tfItemsList').querySelectorAll('option')].filter(o => /ordered before/.test(o.textContent)).map(o => o.value);
+    const open = new Set(window._tfType === 'press_on' ? secs.filter(x => /press/i.test(x.name)).map(x => x.name) : []);
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed; inset:0; z-index:9999; background:rgba(20,20,20,.35); display:flex; align-items:flex-end; justify-content:center;';
+    const draw = (q) => {
+      q = (q||'').toLowerCase().trim();
+      const match = it => !q || it.label.toLowerCase().includes(q) || it.sec.toLowerCase().includes(q);
+      const groups = [];
+      if (past.length && !q) groups.push({ name: 'Pernah dipesan klien ini', items: past.map(l => { for (const sc of secs) { const it = sc.items.find(i => i.label.replace(' ★FAV','') === l); if (it) return { label: l, price: it.price, sec: sc.name }; } return { label: l, price: '', sec: '' }; }) });
+      secs.forEach(sc => groups.push({ name: sc.name, items: sc.items.map(it => ({ label: it.label.replace(' ★FAV',''), price: it.price, sec: sc.name })) }));
+      return groups.map(g => { const items = g.items.filter(match); if (!items.length) return '';
+        const isOpen = q || open.has(g.name) || g.name.startsWith('Pernah');
+        return `<div style="margin-top:8px; border:1px solid ${isOpen ? 'var(--text)' : 'var(--hairline)'}; border-radius:14px; overflow:hidden; background:#fff;">
+          <button data-pkg="${esc(g.name)}" style="width:100%; display:flex; align-items:center; gap:8px; padding:13px 14px; border:0; background:none; font:inherit; color:inherit; text-align:left; cursor:pointer;">
+            <span style="flex:1; font-weight:600; font-size:13px;">${esc(g.name)}</span><span style="font-size:10.5px; color:var(--muted);">${items.length}</span><span style="display:inline-block; transform:rotate(${isOpen?90:0}deg); transition:transform .2s;">›</span></button>
+          ${isOpen ? items.map(it => `<button data-pki="${esc(it.label)}" data-pkp="${esc(it.price)}" style="width:100%; display:flex; align-items:center; gap:10px; padding:12px 14px; border:0; border-top:1px solid var(--hairline); background:none; font:inherit; color:inherit; text-align:left; cursor:pointer;">
+            <span style="flex:1; font-size:13px; line-height:1.35;">${esc(it.label)}</span><span style="font-size:11.5px; background:var(--tint); border-radius:999px; padding:4px 10px; white-space:nowrap;">${esc(it.price || '—')}</span><span style="font-size:16px; color:var(--muted);">＋</span></button>`).join('') : ''}
+        </div>`; }).join('') || '<div style="font-size:12px; color:var(--muted); padding:16px 4px;">Nothing found.</div>';
+    };
+    ov.innerHTML = `<div style="background:var(--bg,#FFF7EF); width:100%; max-width:520px; max-height:86vh; border-radius:22px 22px 0 0; display:flex; flex-direction:column; box-shadow:0 -10px 30px rgba(0,0,0,.12);">
+      <div style="padding:14px 16px 8px;"><div class="row" style="justify-content:space-between; align-items:center;"><b style="font-size:15px;">Price list · ${esc(document.getElementById('tfArtist').value)}</b><button class="btn-primary tap" data-pkdone style="font-size:11.5px; padding:7px 14px;">Done</button></div>
+        <input data-pkq placeholder="Search, e.g. cat eye" style="margin-top:10px; width:100%;" />
+        <div data-pkmsg style="font-size:11px; color:var(--muted); min-height:16px; margin-top:6px;">Tap an item to add it. Tap a section to open it.</div></div>
+      <div data-pklist style="overflow:auto; padding:0 16px 22px; -webkit-overflow-scrolling:touch;">${draw('')}</div></div>`;
+    document.body.appendChild(ov);
+    const list = ov.querySelector('[data-pklist]'), qi = ov.querySelector('[data-pkq]'), msg = ov.querySelector('[data-pkmsg]');
+    qi.addEventListener('input', () => { list.innerHTML = draw(qi.value); });
+    ov.addEventListener('click', e => {
+      if (e.target === ov || e.target.closest('[data-pkdone]')) { ov.remove(); return; }
+      const g = e.target.closest('[data-pkg]'); if (g) { const n = g.dataset.pkg; open.has(n) ? open.delete(n) : open.add(n); const st = list.scrollTop; list.innerHTML = draw(qi.value); list.scrollTop = st; return; }
+      const it = e.target.closest('[data-pki]'); if (!it) return;
+      let r = [...rows.querySelectorAll('.tfRow')].find(x => !x.querySelector('.tfLabel').value.trim() && !x.querySelector('.tfUnit').value);
+      if (!r) { addRow(); r = rows.lastElementChild; }
+      r.querySelector('.tfLabel').value = it.dataset.pki;
+      const pr = it.dataset.pkp; r.querySelector('.tfUnit').value = pr ? parsePrice(pr) : '';
+      r.querySelector('.tfQty').value = /\/(finger|nail|kuku|jari)/i.test(pr) ? 10 : 1;
+      r.querySelector('.tfLabel').dispatchEvent(new Event('input', { bubbles: true }));
+      msg.innerHTML = `✓ Added <b>${esc(it.dataset.pki)}</b>. Check the quantity in the form.`; it.style.background = 'var(--tint)'; setTimeout(() => { it.style.background = 'none'; }, 600);
+    });
+  };
+  document.getElementById('tfPick').onclick = openPicker;
   // caption under each item: is the price per nail, per piece, or one price for all nails?
   const capRow = r => {
     const cap = r.querySelector('.tfCap'); if (!cap) return;
@@ -1880,6 +1959,28 @@ function openTreatmentForm(clientId, editT){
     dpIn.value = a ? a.dp_amount : ''; hint.textContent = a ? '· otomatis dari booking' : ''; recalc();
   }
   document.getElementById('tfClient').addEventListener('change', fillDp);
+  async function fillCoupons(){
+    const el = document.getElementById('tfCpnChips'); if (!el) return;
+    const cid = document.getElementById('tfClient').value;
+    if (window._tfEdit || !cid || cid === '__new'){ el.innerHTML = ''; return; }
+    const { data } = await sb.from('ngd_coupons').select('code,title_en,value_text,expires_on').eq('client_id', cid).eq('status','active').order('created_at');
+    const list = (data||[]).filter(k => !k.expires_on || k.expires_on >= todayISO());
+    if (!list.length){ el.innerHTML = ''; return; }
+    el.innerHTML = `<div style="font-size:11px; color:var(--muted); margin-bottom:4px;">🎁 This client's gifts & coupons — tap to use it in this visit</div>`
+      + list.map(k => `<button class="tap" data-usecpn="${esc(k.code)}" style="display:flex; width:100%; align-items:center; gap:8px; margin-bottom:6px; padding:10px 12px; border:1px solid var(--hairline); border-radius:12px; background:#fff; font:inherit; text-align:left; cursor:pointer;">
+          <span style="flex:1; font-size:12.5px;">${esc((k.title_en||'Coupon').replace(/^Pick a gift:\s*/i,'').replace(/\.$/,''))}${k.expires_on ? `<span style="display:block; font-size:10.5px; color:var(--muted);">until ${esc(k.expires_on)}</span>` : ''}</span>
+          <span class="pill" style="font-size:10.5px; padding:4px 10px;">Use</span></button>`).join('');
+  }
+  document.getElementById('tfClient').addEventListener('change', fillCoupons);
+  setTimeout(fillCoupons, 350);
+  document.getElementById('tfCpnChips').addEventListener('click', e => {
+    const b = e.target.closest('[data-usecpn]'); if (!b) return;
+    const inp = document.getElementById('tfCoupon'); const on = inp.value.trim().toUpperCase() === b.dataset.usecpn;
+    document.querySelectorAll('[data-usecpn]').forEach(x => { x.style.borderColor = 'var(--hairline)'; x.querySelector('.pill').textContent = 'Use'; });
+    if (on){ inp.value = ''; document.getElementById('tfCouponInfo').textContent = ''; document.getElementById('tfVLabel').value = ''; const va = document.getElementById('tfVAmt'); va.value = ''; delete va.dataset.auto; recalc(); return; }
+    inp.value = b.dataset.usecpn; b.style.borderColor = 'var(--text)'; b.querySelector('.pill').textContent = '✓ Used';
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+  });
   document.getElementById('tfDp').addEventListener('input', e => { e.target.dataset.manual = '1'; document.getElementById('tfDpHint').textContent = ''; recalc(); });
   setTimeout(fillDp, 300);
   box.addEventListener('input', e => {
