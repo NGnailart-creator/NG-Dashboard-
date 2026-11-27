@@ -1884,6 +1884,18 @@ function openTreatmentForm(clientId, editT){
         r.querySelector('.tfLabel').dispatchEvent(new Event('input', { bubbles: true }));
       }
       msg.innerHTML = `<span style="color:#2E5E36;">✓ <b>${esc(it.dataset.pki)}</b> ditambahkan${n > 1 ? ' — sekarang × ' + n : ' (1)'}</span>`;
+      const pr0 = it.dataset.pkp || '';
+      if (/[–-]/.test(pr0.replace(/^-/, ''))){
+        const row = [...rows.querySelectorAll('.tfRow')].find(x => x.querySelector('.tfLabel').value.trim() === it.dataset.pki);
+        const uin = row && row.querySelector('.tfUnit');
+        if (uin){
+          msg.innerHTML += `<div style="margin-top:6px; display:flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--text); border-radius:12px; padding:6px 10px;">
+            <span style="font-size:11.5px; flex:1;">Harga ${esc(it.dataset.pki)}<span style="display:block; font-size:10.5px; color:var(--muted);">pilihan ${esc(pr0)}${/\/(nail|kuku|finger|jari|pcs)/i.test(pr0) ? ' — harga satuan' : ''}</span></span>
+            <input data-pkprice type="number" inputmode="numeric" value="${esc(uin.value)}" style="width:110px; text-align:right; font-size:13px; padding:6px 8px;" /></div>`;
+          const pin = msg.querySelector('[data-pkprice]');
+          pin.addEventListener('input', () => { uin.value = pin.value; uin.dispatchEvent(new Event('input', { bubbles: true })); recalc(); drawSum(); });
+        }
+      }
       it.style.background = '#EAF3EA'; setTimeout(() => { it.style.background = 'none'; }, 700);
       recalc(); drawSum();
     });
@@ -1903,6 +1915,9 @@ function openTreatmentForm(clientId, editT){
       : type === 'pcs' ? `Harga <b>per pcs</b> · ${qty} pcs × Rp ${rupiah(unit)} = <b>${tot}</b>`
       : type === 'flat' ? `Harga <b>sekali untuk semua kuku</b> (bukan per kuku)${qty > 1 ? ` · ${qty}× = <b>${tot}</b>` : ` = <b>${tot}</b>`} · <u data-tfper="1" style="cursor:pointer;">hitung per jari</u>`
       : `${qty} × Rp ${rupiah(unit)} = <b>${tot}</b>`;
+    const ranged = /\d\s*[–-]\s*\d/.test(pr);
+    const ui = r.querySelector('.tfUnit'); ui.style.borderColor = ranged ? 'var(--text)' : ''; ui.style.background = ranged ? '#FFF7EF' : '';
+    if (ranged) cap.innerHTML += `<br><span style="color:var(--text);">↔ Harga bisa ${esc(pr)} — ubah angka di kotak Rp/unit sesuai desainnya.</span>`;
   };
   const recalc = () => {
     rows.querySelectorAll('.tfRow').forEach(capRow);
